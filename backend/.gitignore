@@ -1,0 +1,7 @@
+node_modules/
+.env
+medbridge.db
+medbridge.db-wal
+medbridge.db-shm
+dist/
+*.log
