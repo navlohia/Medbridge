@@ -78,7 +78,12 @@
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Fraunces', 'Hanken Grotesk', system-ui, sans-serif;
     letter-spacing: -0.015em;
-    color: rgb(var(--c-ink-900));
+    /* No color here on purpose. A hard `color` on a bare element selector
+       beats an inherited value, so headings on dark surfaces (the dashboard
+       banner, modals, the patient/doctor headers) came out near-black on a
+       dark gradient. The <p> below them escaped only because it is not a
+       heading. Inheriting is correct: the body already sets --c-ink-900, and
+       any dark surface sets text-white, which now actually reaches headings. */
   }
 }
 

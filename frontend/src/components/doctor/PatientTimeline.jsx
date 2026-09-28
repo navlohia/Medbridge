@@ -462,7 +462,7 @@ export default function PatientTimeline({ historyData, onOpenLogVisit, focusTab 
                         {/* Prescriptions — icon rows */}
                         {visit.prescriptions && visit.prescriptions.length > 0 && (
                           <div>
-                            <h5 className="text-xs uppercase tracking-wider font-bold text-primary-400 flex items-center gap-1.5 mb-2">
+                            <h5 className="text-xs uppercase tracking-wider font-bold text-primary-600 flex items-center gap-1.5 mb-2">
                               <Pill className="w-3.5 h-3.5 text-clinical-600" />
                               Prescribed medicines ({visit.prescriptions.length})
                             </h5>
@@ -495,7 +495,7 @@ export default function PatientTimeline({ historyData, onOpenLogVisit, focusTab 
                         {/* Lab orders — chips with status color */}
                         {visit.lab_orders && visit.lab_orders.length > 0 && (
                           <div>
-                            <h5 className="text-xs uppercase tracking-wider font-bold text-primary-400 flex items-center gap-1.5 mb-2">
+                            <h5 className="text-xs uppercase tracking-wider font-bold text-primary-600 flex items-center gap-1.5 mb-2">
                               <FlaskConical className="w-3.5 h-3.5 text-primary-500" />
                               Lab orders ({visit.lab_orders.length})
                             </h5>
