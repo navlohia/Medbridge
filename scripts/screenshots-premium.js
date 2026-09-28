@@ -13,9 +13,12 @@ if (!fs.existsSync(SCREENSHOTS_DIR)) fs.mkdirSync(SCREENSHOTS_DIR, { recursive: 
   const shot = (name) => page.screenshot({ path: path.join(SCREENSHOTS_DIR, name) });
 
   // ===== Doctor workspace =====
-  await page.goto('http://localhost:5173', { waitUntil: 'networkidle' });
-  await page.click('button:has-text("Dr. Reed")');
-  await page.click('button:has-text("Sign In to EMR")');
+  await page.goto('http://localhost:5173/auth/doctor', { waitUntil: 'networkidle' });
+  await page.evaluate(() => { sessionStorage.clear(); localStorage.clear(); });
+  await page.goto('http://localhost:5173/auth/doctor', { waitUntil: 'networkidle' });
+  await page.locator('input[type=email]').fill('doctor@medbridge.com');
+  await page.locator('input[type=password]').fill('demo1234');
+  await page.locator('button[type=submit]').click();
   await page.waitForSelector('text=Clinician Workspace', { timeout: 15000 });
   await page.waitForTimeout(1200);
   await shot('P51_doctor_workspace_hero.png');
@@ -32,8 +35,7 @@ if (!fs.existsSync(SCREENSHOTS_DIR)) fs.mkdirSync(SCREENSHOTS_DIR, { recursive: 
   // ===== Patient dashboard =====
   await page.click('button[title="Sign Out"]');
   await page.waitForSelector('text=Sign In to EMR');
-  await page.click('button:has-text("Marcus Vance")');
-  await page.click('button:has-text("Sign In to EMR")');
+  await loginAs('patient1@medbridge.com');
   await page.waitForSelector('text=Hello, Marcus', { timeout: 15000 });
   await page.waitForTimeout(1500);
   await shot('P51_patient_overview.png');

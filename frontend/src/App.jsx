@@ -1,10 +1,13 @@
 import React from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { RealtimeProvider } from './realtime/RealtimeProvider';
 import { usePath, navigate, pathStartsWith } from './router';
-import LoginPage from './pages/LoginPage';
+import RolePickerPage from './pages/RolePickerPage';
+import AuthPage from './pages/AuthPage';
 import DoctorDashboardPage from './pages/DoctorDashboardPage';
 import PatientDashboardPage from './pages/PatientDashboardPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
+import ForceChangePasswordPage from './pages/ForceChangePasswordPage';
 import { SkeletonLine } from './components/common/Skeleton';
 import LogoMark from './components/common/LogoMark';
 
@@ -15,15 +18,16 @@ const ROLE_HOME = {
 };
 
 // Known routes per area — anything else inside an area is a branded 404.
-// (Patient/doctor tab deep links may be added here as they land.)
+// (Doctor tab deep links land with brief Phase 3.)
 const KNOWN_PATHS = new Set([
   '/login', '/',
+  '/auth/patient', '/auth/doctor', '/auth/admin',
   '/doctor',
   '/patient',
   '/admin', '/admin/doctors', '/admin/patients', '/admin/appointments'
 ]);
 
-/** Branded unknown-route state (Phase 106) — never a bare blank page. */
+/** Branded unknown-route state — never a bare blank page. */
 function NotFound() {
   return (
     <div className="min-h-screen bg-surface-base flex items-center justify-center p-4">
@@ -64,21 +68,33 @@ function AppContent() {
     );
   }
 
-  // Unauthenticated → login for any app route (Phase 100)
+  // Signed out → role picker at "/", per-role auth pages at /auth/:role.
+  // (Legacy /login folds into the picker.)
   if (!user) {
-    return path === '/login' ? <LoginPage /> : <LoginPage />;
+    const authMatch = path.match(/^\/auth\/(patient|doctor|admin)$/);
+    if (authMatch) {
+      return <AuthPage key={authMatch[1]} role={authMatch[1]} />;
+    }
+    return <RolePickerPage />;
   }
 
-  // Authenticated but on /login (or /) → role home (Phase 100)
-  if (path === '/login' || path === '/') {
-    const home = ROLE_HOME[user.role] || '/login';
+  // P41: forced password change — full-screen gate before any portal access.
+  if (user.must_change_password) {
+    return <ForceChangePasswordPage />;
+  }
+
+  // Signed in but on an auth surface → role home.
+  if (
+    path === '/login' || path === '/' || path.startsWith('/auth/')
+  ) {
+    const home = ROLE_HOME[user.role] || '/';
     if (path !== home) {
       navigate(home, { replace: true });
       return null;
     }
   }
 
-  // Role/area mismatch → redirect to own home (Phase 100)
+  // Role/area mismatch → redirect to own home.
   const area = pathStartsWith(path, '/doctor') ? 'doctor'
     : pathStartsWith(path, '/patient') ? 'patient'
     : pathStartsWith(path, '/admin') ? 'admin'
@@ -99,18 +115,16 @@ function AppContent() {
     return KNOWN_PATHS.has(path) ? <AdminDashboardPage /> : <NotFound />;
   }
 
-  // Anything else (e.g. /login while logged in, stray paths) → role home or 404
-  if (path === '/login' || path === '/') {
-    navigate(ROLE_HOME[user.role], { replace: true });
-    return null;
-  }
+  // Anything else → branded 404 (signed-in users can reach it via bad links).
   return <NotFound />;
 }
 
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <RealtimeProvider>
+        <AppContent />
+      </RealtimeProvider>
     </AuthProvider>
   );
 }

@@ -8,6 +8,7 @@ const { extractLabReport } = require('../db/geminiHelper');
 const { LAB_REPORT_MAX_IMAGE_BYTES, LAB_REPORT_ALLOWED_MIMES, LAB_REPORT_UPLOADS_DIR } = require('../config');
 const { localDateStr } = require('../utils/scheduling');
 const { autoCompleteLabOrders } = require('../utils/labOrders');
+const { emit, doctorIds } = require('../utils/events');
 
 function genId(prefix) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -166,6 +167,50 @@ router.post('/upload', authenticateToken, requireRole('patient'), (req, res) => 
 });
 
 /**
+ * GET /lab-reports/image/:name (P20) — authenticated lab-report image serving.
+ * Replaces the old public /uploads static mount: only the owning patient or
+ * any doctor can fetch a report image. Name is validated against the upload
+ * table so arbitrary path probing returns 404.
+ */
+router.get('/image/:name', authenticateToken, (req, res) => {
+  try {
+    const name = String(req.params.name || '');
+    if (!/^[A-Za-z0-9_-]+\.(png|jpg|jpeg)$/i.test(name)) {
+      return res.status(404).json({ error: 'Lab report image not found' });
+    }
+
+    // Match the filename as a path SUFFIX, with LIKE wildcards escaped. The
+    // name guard above still admits `_`, and `_` is a single-character wildcard
+    // in LIKE — so `a_b.png` could match a different patient's `axb.png` and
+    // serve the wrong file. `.get()` would then return an arbitrary match.
+    const escapedName = name.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+    const row = db.prepare(
+      "SELECT patient_id, image_path, image_mime FROM lab_report_uploads WHERE image_path LIKE ? ESCAPE '\\'"
+    ).get(`%${escapedName}`);
+    if (!row) {
+      return res.status(404).json({ error: 'Lab report image not found' });
+    }
+
+    const isOwner = req.user.role === 'patient' && req.user.id === row.patient_id;
+    const isDoctor = req.user.role === 'doctor';
+    if (!isOwner && !isDoctor) {
+      return res.status(403).json({ error: 'You do not have access to this lab report image' });
+    }
+
+    if (!fs.existsSync(row.image_path)) {
+      return res.status(404).json({ error: 'Lab report image not found' });
+    }
+
+    res.setHeader('Content-Type', row.image_mime || 'image/png');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.sendFile(row.image_path);
+  } catch (error) {
+    console.error('Error serving lab report image:', error);
+    res.status(500).json({ error: 'Failed to load lab report image' });
+  }
+});
+
+/**
  * GET /lab-reports — patient's upload history (Phase 86).
  */
 router.get('/', authenticateToken, requireRole('patient'), (req, res) => {
@@ -187,7 +232,7 @@ router.get('/', authenticateToken, requireRole('patient'), (req, res) => {
         id: r.id,
         uploaded_at: r.uploaded_at,
         report_date: r.report_date,
-        image_url: `/uploads/${path.basename(r.image_path)}`,
+        image_url: `/api/lab-reports/image/${path.basename(r.image_path)}`,
         image_mime: r.image_mime,
         needs_manual_entry: Boolean(r.needs_manual_entry),
         status: r.status,
@@ -225,7 +270,7 @@ router.get('/:id', authenticateToken, requireRole('patient'), (req, res) => {
       id: row.id,
       uploaded_at: row.uploaded_at,
       report_date: row.report_date,
-      image_url: `/uploads/${path.basename(row.image_path)}`,
+      image_url: `/api/lab-reports/image/${path.basename(row.image_path)}`,
       image_mime: row.image_mime,
       needs_manual_entry: Boolean(row.needs_manual_entry),
       status: row.status,
@@ -319,6 +364,27 @@ router.post('/:id/confirm', authenticateToken, requireRole('patient'), (req, res
       completed_lab_orders: completedOrders,
       matched_order_count: completedOrders.length
     });
+
+    // P28: labreport.confirmed + lab_order.completed → doctors + the patient.
+    const patientName = db.prepare('SELECT name FROM users WHERE id = ?').get(req.user.id)?.name || 'A patient';
+    emit({
+      type: 'labreport.confirmed',
+      ids: [...doctorIds(), req.user.id],
+      actor_name: req.user.name,
+      summary: `${patientName} confirmed a lab report (${writtenLogs.length} reading${writtenLogs.length > 1 ? 's' : ''})`,
+      patient_id: req.user.id,
+      upload_id: upload.id
+    });
+    if (completedOrders.length > 0) {
+      emit({
+        type: 'lab_order.completed',
+        ids: [...doctorIds(), req.user.id],
+        actor_name: req.user.name,
+        summary: `${completedOrders.length} pending lab order${completedOrders.length > 1 ? 's' : ''} completed automatically`,
+        patient_id: req.user.id,
+        order_ids: completedOrders.map(o => o.id || o.order_id || o).slice(0, 20)
+      });
+    }
   } catch (error) {
     if (error.message === 'NO_VALID_ROWS') {
       return res.status(400).json({ error: 'None of the rows had a test name and value — nothing was saved.' });

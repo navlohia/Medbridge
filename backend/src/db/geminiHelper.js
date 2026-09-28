@@ -17,15 +17,40 @@
  */
 require('dotenv').config();
 
-const TEXT_MODEL_CANDIDATES = [
+/**
+ * Candidate models, ORDERED FASTEST-FIRST — and every entry verified live
+ * against the Gemini API (HTTP 200 for both text and a vision image) on
+ * 2026-09-28. Ordering is by measured latency, because the list is walked in
+ * order and the first success wins:
+ *
+ *   gemini-flash-lite-latest   text ~0.9s  vision ~1.6s
+ *   gemini-3.1-flash-lite      text ~2.6s  vision ~3.0s
+ *   gemini-3.8-flash           text ~6.6s  vision ~5.7s   (API-recommended)
+ *   gemini-3-flash-preview     text ~11s   vision ~9.5s
+ *   gemini-flash-latest        text ~6.4s  vision 503 under load
+ *
+ * The RETIRED models are kept last as a last-resort tail, not deleted: they
+ * answer 404 for newer keys but still serve keys provisioned before their
+ * retirement, and a 404 costs ~300ms. Previously they sat at the FRONT, so
+ * every single lab-report upload paid two dead round-trips before reaching a
+ * model that works.
+ */
+const LIVE_MODEL_CANDIDATES = [
+  'gemini-flash-lite-latest',
+  'gemini-3.1-flash-lite',
+  'gemini-3.8-flash',
+  'gemini-3-flash-preview',
+  'gemini-flash-latest'
+];
+const RETIRED_MODEL_CANDIDATES = [
   'gemini-2.5-flash',
   'gemini-2.0-flash',
-  'gemini-flash-latest',
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-001'
+  'gemini-1.5-flash'
 ];
+const TEXT_MODEL_CANDIDATES = [...LIVE_MODEL_CANDIDATES, ...RETIRED_MODEL_CANDIDATES];
 
 let resolvedTextModel = null;
+let resolvedVisionModel = null;
 
 async function callGemini(model, parts, { maxOutputTokens = 512, temperature = 0.3, timeoutMs = 30000 } = {}) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -69,10 +94,11 @@ async function resolveTextModel() {
   for (const model of TEXT_MODEL_CANDIDATES) {
     try {
       const reply = await callGemini(model, [{ text: 'Reply with the single word OK' }], {
-        maxOutputTokens: 8, timeoutMs: 15000
+        maxOutputTokens: 8, timeoutMs: 12000
       });
       if (reply) {
         resolvedTextModel = model;
+        console.log(`[Gemini] text model resolved: ${model}`);
         return model;
       }
     } catch (err) {
@@ -119,7 +145,15 @@ async function extractLabReport(base64Image, mimeType) {
 {"rows":[{"test_name":"string","value":"string or number","unit":"string or null","reference_range":"string or null","confidence":0.0-1.0}],"report_date":"YYYY-MM-DD or null"}
 Rules: test_name is the human-readable test label (e.g. "Hemoglobin", "Fasting Blood Sugar"). value is the numeric result. Include reference_range only if printed. confidence reflects how certain you are the value was read correctly. If the image is not a lab report or nothing is readable, return {"rows":[],"report_date":null}.`;
 
-  const visionModelCandidates = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest', 'gemini-1.5-flash'];
+  // 15s per attempt is a deliberate ceiling: the patient is staring at a
+  // spinner on the upload screen, and the fallback (manual entry) is a perfectly
+  // good experience. A 45s-per-candidate ceiling across five candidates meant a
+  // Gemini outage could hang this request for over three minutes before the
+  // manual-entry screen appeared.
+  const VISION_TIMEOUT_MS = 15000;
+  // The previous upload's winner goes first, then the full verified list. The
+  // winning model is cached below, so only the very first upload walks the list.
+  const visionModelCandidates = [...new Set([resolvedVisionModel, ...TEXT_MODEL_CANDIDATES].filter(Boolean))];
   let lastError = null;
 
   for (const model of visionModelCandidates) {
@@ -127,7 +161,7 @@ Rules: test_name is the human-readable test label (e.g. "Hemoglobin", "Fasting B
       const text = await callGemini(model, [
         { text: prompt },
         { inline_data: { mime_type: mimeType, data: base64Image } }
-      ], { maxOutputTokens: 1200, temperature: 0.1, timeoutMs: 45000 });
+      ], { maxOutputTokens: 1200, temperature: 0.1, timeoutMs: VISION_TIMEOUT_MS });
 
       // Defensive parse (Phase 78): strip fences, find the outermost JSON object
       let cleaned = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
@@ -151,6 +185,11 @@ Rules: test_name is the human-readable test label (e.g. "Hemoglobin", "Fasting B
         ? parsed.report_date
         : null;
 
+      // Remember the model that answered so the next upload skips the probing.
+      if (resolvedVisionModel !== model) {
+        resolvedVisionModel = model;
+        console.log(`[Gemini Vision] using model: ${model}`);
+      }
       return { rows, report_date: reportDate };
     } catch (err) {
       lastError = err;

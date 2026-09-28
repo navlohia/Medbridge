@@ -1,4 +1,5 @@
 const { chromium } = require('playwright');
+const { login } = require('./lib');
 const fs = require('fs');
 const { execSync } = require('child_process');
 const path = require('path');
@@ -40,8 +41,7 @@ async function runE2E() {
   check('login page renders', await page.isVisible('text=Sign In to EMR'));
 
   console.log('--- Stage B: Doctor visit logging with conflict ---');
-  await page.click('button:has-text("Dr. Reed")');
-  await page.click('button:has-text("Sign In to EMR")');
+  await login(page, 'doctor@medbridge.com');
   await page.waitForSelector('text=Clinician Workspace', { timeout: 15000 });
   await page.waitForTimeout(1200);
   await shot('02_doctor_dashboard.png');
@@ -214,8 +214,7 @@ async function runE2E() {
   console.log('--- Stage F: Doctor confirms request ---');
   await page.click('button[title="Sign Out"]');
   await page.waitForSelector('text=Sign In to EMR');
-  await page.click('button:has-text("Dr. Reed")');
-  await page.click('button:has-text("Sign In to EMR")');
+  await login(page, 'doctor@medbridge.com');
   await page.waitForSelector('text=Clinician Workspace');
   await page.waitForTimeout(1500);
   const reqVisible = await page.isVisible('text=Prefers');
@@ -228,8 +227,7 @@ async function runE2E() {
   console.log('--- Stage G: Patient sees Confirmed + lab order completed ---');
   await page.click('button[title="Sign Out"]');
   await page.waitForSelector('text=Sign In to EMR');
-  await page.click('button:has-text("Marcus Vance")');
-  await page.click('button:has-text("Sign In to EMR")');
+  await login(page, 'patient1@medbridge.com');
   await page.waitForSelector('text=Hello, Marcus');
   await page.waitForTimeout(1500);
   check('appointment banner (within 7 days)',
@@ -242,8 +240,7 @@ async function runE2E() {
   console.log('--- Stage H: Doctor adds guidance on a symptom journal entry ---');
   await page.click('button[title="Sign Out"]');
   await page.waitForSelector('text=Sign In to EMR');
-  await page.click('button:has-text("Dr. Reed")');
-  await page.click('button:has-text("Sign In to EMR")');
+  await login(page, 'doctor@medbridge.com');
   await page.waitForSelector('text=Clinician Workspace', { timeout: 15000 });
   await page.waitForTimeout(1500);
   // Marcus is the default selected patient; open the Symptom Journal tab
@@ -262,8 +259,7 @@ async function runE2E() {
   console.log('--- Stage I: Patient sees the doctor guidance in their journal ---');
   await page.click('button[title="Sign Out"]');
   await page.waitForSelector('text=Sign In to EMR');
-  await page.click('button:has-text("Marcus Vance")');
-  await page.click('button:has-text("Sign In to EMR")');
+  await login(page, 'patient1@medbridge.com');
   await page.waitForSelector('text=Hello, Marcus', { timeout: 15000 });
   await page.waitForTimeout(1200);
   await page.click('button:has-text("Symptoms")');
@@ -276,8 +272,7 @@ async function runE2E() {
   console.log('--- Stage J: Admin portal — create doctor, patient, toggle status ---');
   await page.click('button[title="Sign Out"]');
   await page.waitForSelector('text=Sign In to EMR');
-  await page.click('button:has-text("Admin")');
-  await page.click('button:has-text("Sign In to EMR")');
+  await login(page, 'admin@medbridge.com');
   await page.waitForSelector('text=Admin Console', { timeout: 15000 });
   await page.waitForTimeout(1000);
   check('admin console renders', await page.isVisible('text=Admin Console'));
@@ -336,8 +331,7 @@ async function runE2E() {
   // log in as the newly created patient using their temp password is not
   // possible (password shown once in admin session) — use Marcus to book, then
   // verify the slot becomes unavailable to a second booking attempt in the UI.
-  await page.click('button:has-text("Marcus Vance")');
-  await page.click('button:has-text("Sign In to EMR")');
+  await login(page, 'patient1@medbridge.com');
   await page.waitForSelector('text=Hello, Marcus', { timeout: 15000 });
   await page.waitForTimeout(1200);
   await page.click('button:has-text("Appointments")');
@@ -399,8 +393,7 @@ async function runE2E() {
     // Patient accepts (1366px hides the navbar switcher — use the login persona)
     await page.click('button[title="Sign Out"]');
     await page.waitForSelector('text=Sign In to EMR');
-    await page.click('button:has-text("Patient 2")');
-    await page.click('button:has-text("Sign In to EMR")');
+    await login(page, 'patient2@medbridge.com');
     await page.waitForSelector('text=Hello, Elena', { timeout: 15000 });
     await page.waitForTimeout(1200);
     await page.click('button:has-text("Appointments")');
@@ -419,8 +412,7 @@ async function runE2E() {
   console.log('--- Stage M: lab report upload -> confirm -> trends + order complete ---');
   await page.click('button[title="Sign Out"]');
   await page.waitForSelector('text=Sign In to EMR');
-  await page.click('button:has-text("Marcus Vance")');
-  await page.click('button:has-text("Sign In to EMR")');
+  await login(page, 'patient1@medbridge.com');
   await page.waitForSelector('text=Hello, Marcus', { timeout: 15000 });
   await page.waitForTimeout(1200);
   const uploadM = page.locator('button', { hasText: 'Upload report photo' }).first();

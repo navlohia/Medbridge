@@ -1,4 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import useRealtimeRefetch from '../hooks/useRealtimeRefetch';
+import useReconnectRefetch from '../hooks/useReconnectRefetch';
+import { useRealtimeStatus } from '../realtime/RealtimeProvider';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import Navbar from '../components/common/Navbar';
 import PatientSelector from '../components/doctor/PatientSelector';
@@ -31,6 +35,12 @@ export default function DoctorDashboardPage() {
   const [historyError, setHistoryError] = useState(null);
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
   const [recentNotification, setRecentNotification] = useState(null);
+  // P30: realtime event → notification banner (aria-live region already in place).
+  const doctorToast = (ev) => {
+    if (!ev?.summary) return;
+    setRecentNotification({ type: 'info', message: ev.summary });
+    setTimeout(() => setRecentNotification(null), 7000);
+  };
   const [pendingRequests, setPendingRequests] = useState([]);
 
   // 1. Fetch patients list
@@ -40,11 +50,7 @@ export default function DoctorDashboardPage() {
       const list = await api.getPatients();
       setPatients(list);
       if (list.length > 0) {
-        setSelectedPatientId(prev => {
-          if (prev) return prev;
-          const defaultPat = list.find(p => p.email === 'patient1@medbridge.com') || list[0];
-          return defaultPat.id;
-        });
+        setSelectedPatientId(prev => prev || list[0].id);
       }
     } catch (err) {
       console.error('Failed to load patients:', err);
@@ -113,6 +119,41 @@ export default function DoctorDashboardPage() {
       loadPatientHistory(selectedPatientId);
     }
   }, [selectedPatientId]);
+
+  // P29–P31: realtime refetch + 30s poll fallback + reconnect sweep.
+  // loadPatientHistory does not set loading=true until its fetch resolves
+  // (old data stays on screen) — flashless for the SSE path.
+  const lastEventAtRef = useRef(Date.now());
+  const { user: meUser, logout: doctorLogout } = useAuth();
+  useRealtimeRefetch({
+    'appointment.requested': (ev) => { lastEventAtRef.current = Date.now(); loadPendingRequests(); if (ev?.patient_id && ev.patient_id === selectedPatientId) loadPatientHistory(ev.patient_id); if (ev?.actor_name !== meUser?.name) doctorToast(ev); },
+    'appointment.updated': (ev) => { lastEventAtRef.current = Date.now(); loadPendingRequests(); if (ev?.patient_id && ev.patient_id === selectedPatientId) loadPatientHistory(ev.patient_id); if (ev?.actor_name !== meUser?.name) doctorToast(ev); },
+    'selflog.created': (ev) => { lastEventAtRef.current = Date.now(); if (ev?.patient_id === selectedPatientId) loadPatientHistory(ev.patient_id); doctorToast(ev); },
+    'account.status_changed': (ev) => { lastEventAtRef.current = Date.now(); loadPatients(); if (ev?.actor_name !== meUser?.name) doctorToast(ev); },
+    'session.revoked': (ev) => {
+      doctorLogout();
+      sessionStorage.setItem('medbridge_auth_notice', ev.summary || 'Your session has been revoked.');
+    }
+  });
+  useReconnectRefetch([() => loadPatients(), () => loadPendingRequests(), () => selectedPatientId && loadPatientHistory(selectedPatientId)]);
+  // The interval must be created ONCE. With no dependency array React tore it
+  // down and rebuilt it on every render, so the 30s timer restarted from zero
+  // each time and could never reach its callback — the stale-data safety net
+  // silently did nothing on the busiest screen in the app, while still looking
+  // correct on review. Live values are read through a ref so the one closure
+  // this effect keeps is never stale.
+  const pollRef = useRef(null);
+  pollRef.current = { loadPatients, loadPendingRequests, loadPatientHistory, selectedPatientId };
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (Date.now() - lastEventAtRef.current < 31000) return;
+      const { loadPatients: reloadPatients, loadPendingRequests: reloadRequests, loadPatientHistory: reloadHistory, selectedPatientId: patientId } = pollRef.current;
+      reloadPatients();
+      reloadRequests();
+      if (patientId) reloadHistory(patientId);
+    }, 30000);
+    return () => clearInterval(id);
+  }, []);
 
   // Tab requested from the dashboard level (journal nudge → open the journal)
   const [timelineTab, setTimelineTab] = useState(null);

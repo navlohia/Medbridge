@@ -2,112 +2,129 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   P43 — MedBridge design tokens (single source).
+   Raw RGB triplets so Tailwind can apply <alpha-value> modifiers.
+   Anchors: paper #FAF8F4 · ink #14201F · spruce #1F5E5A · clay accent.
+   Hairline borders carry structure; shadows only float layers;
+   NO gradients on buttons/cards/text; NO glow shadows.
+   ============================================================ */
 @layer base {
+  :root {
+    /* paper (surfaces) */
+    --c-paper: 250 248 244;        /* #FAF8F4 app background */
+    --c-paper-warm: 247 244 238;   /* slightly warmer section tint */
+    --c-paper-subtle: 243 240 233; /* inputs / wells */
+    --c-paper-hover: 246 242 235;
+    --c-card: 255 255 255;         /* cards stay white for crispness */
+    --c-hairline: 231 226 217;     /* warm hairline #E7E2D9 */
+
+    /* ink (text) — anchor #14201F */
+    --c-ink-950: 10 16 15;
+    --c-ink-900: 20 32 31;         /* #14201F */
+    --c-ink-800: 30 45 43;
+    --c-ink-700: 52 68 66;
+    --c-ink-600: 74 90 88;
+    --c-ink-500: 98 113 111;
+    --c-ink-400: 128 142 140;
+    --c-ink-300: 164 176 174;
+    --c-ink-200: 203 211 209;
+    --c-ink-100: 228 233 232;
+    --c-ink-50: 242 246 245;
+
+    /* spruce (primary actions / brand) — anchor #1F5E5A */
+    --c-spruce-900: 15 49 47;      /* #0F312F */
+    --c-spruce-800: 23 75 72;      /* #174B48 = hover */
+    --c-spruce-700: 27 84 80;      /* #1B5450 */
+    --c-spruce-600: 31 94 90;      /* #1F5E5A = anchor */
+    --c-spruce-500: 43 111 106;    /* #2B6F6A */
+    --c-spruce-400: 79 138 132;    /* #4F8A84 */
+    --c-spruce-300: 130 172 167;   /* #82ACA7 */
+    --c-spruce-200: 185 211 207;   /* #B9D3CF */
+    --c-spruce-100: 219 234 231;   /* #DBEAE7 */
+    --c-spruce-50: 236 243 242;    /* #ECF3F2 */
+
+    /* clay — ONE warm accent, sparing */
+    --c-clay-600: 178 88 58;       /* #B2583A */
+    --c-clay-500: 199 110 76;      /* #C76E4C */
+    --c-clay-text: 154 68 42;      /* #9A442A */
+    --c-clay-bg: 250 238 231;      /* #FAEEE7 */
+    --c-clay-border: 235 205 189;  /* #EBCDBD */
+
+    /* semantics — desaturated */
+    --c-warning: 178 122 32;
+    --c-warning-text: 137 94 26;
+    --c-warning-bg: 250 244 230;
+    --c-warning-border: 233 216 174;
+
+    --c-danger: 168 62 54;
+    --c-danger-text: 148 54 47;
+    --c-danger-bg: 249 237 235;
+    --c-danger-border: 233 200 195;
+
+    --c-success: 74 124 89;
+    --c-success-text: 62 106 76;
+    --c-success-bg: 234 244 237;
+    --c-success-border: 190 220 199;
+  }
+
   body {
-    background-color: #F8FAFC;
-    /* Layered brand canvas: slate base with two faint clinical-teal glows so
-       the page never reads as flat gray. Fixed attachment keeps the tints
-       stable while content scrolls. */
-    background-image:
-      radial-gradient(ellipse 60% 42% at 88% -6%, rgba(13, 148, 136, 0.08), transparent 62%),
-      radial-gradient(ellipse 55% 38% at -8% 104%, rgba(15, 118, 110, 0.055), transparent 65%);
-    background-attachment: fixed;
-    color: #0F172A;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background-color: rgb(var(--c-paper));
+    color: rgb(var(--c-ink-900));
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    letter-spacing: -0.02em;
+    font-family: 'Fraunces', 'Hanken Grotesk', system-ui, sans-serif;
+    letter-spacing: -0.015em;
+    color: rgb(var(--c-ink-900));
   }
 }
 
-/* Custom smooth transitions */
+/* Motion 150–250ms (P56 formalizes reduced-motion) */
 .transition-med {
   transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Custom subtle scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #14B8A6;
-}
+/* Scrollbar, inked */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgb(var(--c-ink-200)); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-spruce-400)); }
 
-/* Keyboard focus ring — visible, premium, token-colored */
-.focus-ring {
-  outline: none;
-}
+/* Keyboard focus ring — visible, token-colored */
+.focus-ring { outline: none; }
 .focus-ring:focus-visible {
-  outline: 2px solid #0D9488;
+  outline: 2px solid rgb(var(--c-spruce-600));
   outline-offset: 2px;
   border-radius: 8px;
 }
 
 /* Numerals read better tabular in stats and readings */
-.tnum {
-  font-variant-numeric: tabular-nums;
-}
+.tnum { font-variant-numeric: tabular-nums; }
 
-/* Brand selection color everywhere */
 ::selection {
-  background: #CCFBF1;
-  color: #134E4A;
+  background: rgb(var(--c-spruce-100));
+  color: rgb(var(--c-spruce-900));
 }
 
-/* Buttons with presence: 1px lift + teal glow on hover */
-.btn-lift {
-  transition:
-    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 180ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-.btn-lift:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
-.btn-lift:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-/* Gradient headline text (brand moments) */
+/* Legacy gradient text + grid textures are retired (P43): the classes remain
+   as quiet no-ops so any stale usage renders as plain ink instead of breaking. */
 .text-gradient-clinical {
-  background: linear-gradient(135deg, #0D9488 0%, #0F766E 55%, #134E4A 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: rgb(var(--c-spruce-800));
+  background: none;
+  -webkit-text-fill-color: currentColor;
 }
+.hero-grid { background-image: none; }
 
-/* Faint architectural grid for dark hero surfaces */
-.hero-grid {
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size: 44px 44px;
-  -webkit-mask-image: radial-gradient(ellipse 80% 90% at 70% 10%, black 25%, transparent 72%);
-  mask-image: radial-gradient(ellipse 80% 90% at 70% 10%, black 25%, transparent 72%);
-}
-
-/* Shimmer animation for skeleton loaders */
+/* Skeleton shimmer on paper */
 @keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
-
 .skeleton-shimmer {
-  background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
+  background: linear-gradient(90deg, rgb(var(--c-ink-100)) 25%, rgb(var(--c-ink-50)) 50%, rgb(var(--c-ink-100)) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.6s infinite;
 }

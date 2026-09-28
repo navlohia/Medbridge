@@ -37,11 +37,12 @@ async function checkOverflow(page, label) {
     page.setDefaultTimeout(15000);
 
     // ---- Admin (all tabs) ----
-    await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
-    await page.evaluate(() => localStorage.clear());
-    await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
+    await page.goto(BASE + '/auth/admin', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(() => { sessionStorage.clear(); localStorage.clear(); });
+    await page.goto(BASE + '/auth/admin', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(500);
-    await page.locator('button', { hasText: 'Admin' }).first().click();
+    await page.locator('input[type=email]').fill('admin@medbridge.com');
+    await page.locator('input[type=password]').fill('demo1234');
     await page.locator('button[type=submit]').click();
     await page.waitForURL('**/admin', { timeout: 15000 });
     await page.waitForTimeout(1000);
@@ -62,12 +63,24 @@ async function checkOverflow(page, label) {
     await page.waitForTimeout(300);
 
     // ---- Doctor: Day View + propose-reschedule slot grid ----
-    await page.locator('button[title*="Dr. Evelyn Reed"]').click();
+    await page.locator('button[aria-label="Sign Out"]').click();
+    await page.waitForTimeout(800);
+    await page.goto(BASE + '/auth/doctor', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(500);
+    await page.locator('input[type=email]').fill('doctor@medbridge.com');
+    await page.locator('input[type=password]').fill('demo1234');
+    await page.locator('button[type=submit]').click();
     await page.waitForTimeout(1500);
     allOk = (await checkOverflow(page, 'doctor dashboard (with Day View)')) && allOk;
 
     // Lab upload modal on patient side
-    await page.locator('button[title*="Marcus Vance"]').click();
+    await page.locator('button[aria-label="Sign Out"]').click();
+    await page.waitForTimeout(800);
+    await page.goto(BASE + '/auth/patient', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(500);
+    await page.locator('input[type=email]').fill('patient1@medbridge.com');
+    await page.locator('input[type=password]').fill('demo1234');
+    await page.locator('button[type=submit]').click();
     await page.waitForTimeout(1500);
     allOk = (await checkOverflow(page, 'patient overview')) && allOk;
     const uploadBtn = page.locator('button', { hasText: 'Upload report photo' }).first();

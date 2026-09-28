@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
+const { authenticateToken } = require('../middleware/auth');
 
-// GET /medicines - searchable list
-router.get('/', (req, res) => {
+// GET /medicines - searchable list (P19: valid token required)
+router.get('/', authenticateToken, (req, res) => {
   try {
     const q = req.query.q ? req.query.q.trim() : '';
     let medicines;
@@ -40,8 +41,8 @@ router.get('/', (req, res) => {
   }
 });
 
-// GET /medicines/:id - single medicine
-router.get('/:id', (req, res) => {
+// GET /medicines/:id - single medicine (P19: valid token required)
+router.get('/:id', authenticateToken, (req, res) => {
   try {
     const medicine = db.prepare(`
       SELECT id, name, composition, therapeutic_class, side_effects,

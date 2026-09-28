@@ -1,6 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
+import { localDateStr } from '../utils/date';
+import useRealtimeRefetch from '../hooks/useRealtimeRefetch';
+import useReconnectRefetch from '../hooks/useReconnectRefetch';
+import { useRealtimeStatus } from '../realtime/RealtimeProvider';
 import Navbar from '../components/common/Navbar';
 import Badge from '../components/common/Badge';
 import Button from '../components/common/Button';
@@ -91,7 +95,7 @@ const TABS = [
 ];
 
 export default function PatientDashboardPage() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [dashboardData, setDashboardData] = useState(null);
   const [historyData, setHistoryData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -164,9 +168,49 @@ export default function PatientDashboardPage() {
     }
   };
 
+  // P21: patient cancels their own requested/confirmed appointment
+  const [cancelBusy, setCancelBusy] = useState(null);
+  const cancelAppointment = async (id) => {
+    setCancelBusy(id);
+    try {
+      const res = await api.cancelAppointment(id);
+      triggerRefresh(res.message || 'Appointment cancelled.', 'success');
+    } catch (err) {
+      triggerRefresh(err.message || 'Could not cancel the appointment.', 'danger');
+    } finally {
+      setCancelBusy(null);
+    }
+  };
+
   useEffect(() => {
     loadAppointments();
   }, [user?.id, refreshTrigger]);
+
+  // P29–P31: realtime refetch (flashless — no loading=true on this path) +
+  // 30s poll fallback + refetch-everything after a stream reconnect.
+  const status = useRealtimeStatus();
+  const lastEventAtRef = useRef(Date.now());
+  useRealtimeRefetch({
+    'appointment.requested': (ev) => { lastEventAtRef.current = Date.now(); loadAppointments(); loadPatientData(); if (ev?.actor_name && !ev.actor_name.includes(user?.name)) showEventToast(ev); },
+    'appointment.updated': (ev) => { lastEventAtRef.current = Date.now(); loadAppointments(); loadPatientData(); if (ev?.actor_name && !ev.actor_name.includes(user?.name)) showEventToast(ev); },
+    'visit.created': () => { lastEventAtRef.current = Date.now(); loadPatientData(); },
+    'guidance.created': (ev) => { lastEventAtRef.current = Date.now(); loadPatientData(); showEventToast(ev); },
+    'labreport.confirmed': () => { lastEventAtRef.current = Date.now(); loadPatientData(); },
+    'lab_order.completed': (ev) => { lastEventAtRef.current = Date.now(); loadPatientData(); showEventToast(ev); },
+    'session.revoked': (ev) => {
+      logout();
+      sessionStorage.setItem('medbridge_auth_notice', ev.summary || 'Your session has been revoked.');
+    }
+  });
+  useReconnectRefetch([loadPatientData, loadAppointments]);
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (Date.now() - lastEventAtRef.current < 31000) return; // stream is clearly alive
+      loadPatientData();
+      loadAppointments();
+    }, 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const triggerRefresh = (message = null, type = 'success') => {
     if (message) {
@@ -174,6 +218,13 @@ export default function PatientDashboardPage() {
       setTimeout(() => setToast(null), 7000);
     }
     setRefreshTrigger(prev => prev + 1);
+  };
+
+  // P30: toasts for meaningful realtime events (aria-live handled by Toast).
+  const showEventToast = (ev) => {
+    if (!ev?.summary) return;
+    setToast({ message: ev.summary, type: 'info' });
+    setTimeout(() => setToast(null), 7000);
   };
 
   const nextAppointment = dashboardData?.next_appointment;
@@ -911,7 +962,7 @@ export default function PatientDashboardPage() {
               <div className="space-y-2.5">
                 {myAppointments.map(a => {
                   const meta = APPOINTMENT_STATUS_META[a.status] || APPOINTMENT_STATUS_META.confirmed;
-                  const todayStr = new Date().toISOString().split('T')[0];
+                  const todayStr = localDateStr();
                   const isUpcoming = a.appointment_date >= todayStr && a.status !== 'cancelled';
                   const isReschedule = a.status === 'reschedule_proposed';
                   return (
@@ -1003,6 +1054,18 @@ export default function PatientDashboardPage() {
                               <span>Decline</span>
                             </Button>
                           </div>
+                        )}
+                        {/* P21: patient cancel for own requested/confirmed appointments */}
+                        {(a.status === 'requested' || a.status === 'confirmed') && isUpcoming && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={cancelBusy === a.id}
+                            onClick={() => cancelAppointment(a.id)}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>Cancel</span>
+                          </Button>
                         )}
                       </div>
                     </div>

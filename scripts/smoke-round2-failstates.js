@@ -15,12 +15,13 @@ function check(name, cond, detail = '') {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const BASE = 'http://localhost:5173';
 
-  // Log in as admin BEFORE killing the server (token cached in localStorage)
-  await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => localStorage.clear());
-  await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
+  // Log in as admin BEFORE killing the server (token cached in sessionStorage — P04)
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => { sessionStorage.clear(); localStorage.clear(); });
+  await page.goto(BASE + '/auth/admin', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(500);
-  await page.locator('button', { hasText: 'Admin' }).first().click();
+  await page.locator('input[type=email]').fill('admin@medbridge.com');
+  await page.locator('input[type=password]').fill('demo1234');
   await page.locator('button[type=submit]').click();
   await page.waitForURL('**/admin', { timeout: 8000 });
   await page.waitForTimeout(600);
@@ -67,21 +68,26 @@ function check(name, cond, detail = '') {
   const blankCheck = await page.evaluate(() => document.body.innerText.trim().length);
   check('doctor dashboard shows error text (not blank)', docPageErr >= 1 && blankCheck > 100, `err=${docPageErr} chars=${blankCheck}`);
 
-  // Patient dashboard → error state. Swap the cached session to a patient
-  // (server is dead, so every dashboard fetch fails identically regardless
-  // of token validity) — otherwise the role guard bounces /patient to /admin.
-  await page.evaluate(() => {
-    const u = JSON.parse(localStorage.getItem('medbridge_user'));
-    localStorage.setItem('medbridge_user', JSON.stringify({ ...u, id: 'pat_1', name: 'Marcus Vance', email: 'patient1@medbridge.com', role: 'patient' }));
-  });
-  await page.goto(BASE + '/patient', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2500);
-  const patErr = await page.locator('text=Could not load your health portal').count();
-  const patChars = await page.evaluate(() => document.body.innerText.trim().length);
+  // Patient dashboard → error state. Fresh login as a patient in a new tab
+  // (server is dead, so every dashboard fetch fails identically regardless of
+  // token validity); the original admin tab stays untouched.
+  {
+    const patPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await patPage.goto(BASE + '/auth/patient', { waitUntil: 'domcontentloaded' });
+    await patPage.waitForTimeout(500);
+    await patPage.locator('input[type=email]').fill('patient1@medbridge.com');
+    await patPage.locator('input[type=password]').fill('demo1234').catch(() => {});
+    await patPage.locator('button[type=submit]').click().catch(() => {});
+    await patPage.waitForTimeout(1500);
+  await patPage.goto(BASE + '/patient', { waitUntil: 'domcontentloaded' });
+  await patPage.waitForTimeout(2500);
+  const patErr = await patPage.locator('text=Could not load your health portal').count();
+  const patChars = await patPage.evaluate(() => document.body.innerText.trim().length);
   check('patient dashboard shows error state (not blank)', patErr >= 1 && patChars > 100, `err=${patErr} chars=${patChars}`);
 
   // Screenshot evidence
-  await page.screenshot({ path: 'screenshots/R2_failstate_patient.png' });
+  await patPage.screenshot({ path: 'screenshots/R2_failstate_patient.png' });
+  await patPage.close();
 
   await browser.close();
   console.log(`\n=== Phase 229 force-fail sweep: ${passed} passed, ${failed} failed ===`);

@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
+const { authenticateToken } = require('../middleware/auth');
 
-// GET /lab-tests
-router.get('/', (req, res) => {
+// GET /lab-tests (P19: valid token required)
+router.get('/', authenticateToken, (req, res) => {
   try {
     const tests = db.prepare(`
       SELECT id, test_name, unit, normal_low, normal_high

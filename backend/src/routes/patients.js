@@ -3,6 +3,7 @@ const router = express.Router();
 const { db } = require('../db/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { createUserAccount, AccountValidationError } = require('../utils/accounts');
+const { emit, adminIds } = require('../utils/events');
 
 // GET /doctors route lives in routes/doctors.js (mounted at /doctors)
 
@@ -22,6 +23,16 @@ router.post('/', authenticateToken, requireRole('doctor'), (req, res) => {
       temp_password: tempPassword,
       handoff_message: `Welcome, ${user.name}! Sign in at MedBridge with ${user.email} and the temporary password from your doctor — change it after your first sign-in.`
     });
+
+    // P28: quick-add is an account birth too.
+    emit({
+      type: 'account.created',
+      ids: adminIds(),
+      actor_name: req.user.name,
+      summary: `${user.name} was registered as a walk-in patient`,
+      user_id: user.id,
+      role: 'patient'
+    });
   } catch (error) {
     if (error instanceof AccountValidationError) {
       return res.status(error.status).json({ error: error.message });
@@ -32,9 +43,10 @@ router.post('/', authenticateToken, requireRole('doctor'), (req, res) => {
 });
 
 // GET /patients - List patients (for Doctor's patient picker)
-// Enriched with lightweight symptom-journal activity so the clinician sees
-// who has been logging (and how rough the latest entry was) at a glance.
-router.get('/', authenticateToken, (req, res) => {
+// P18: doctor-only — the roster is clinic staff data; patients and admins
+// are refused. Enriched with lightweight symptom-journal activity so the
+// clinician sees who has been logging (and how rough the latest entry was).
+router.get('/', authenticateToken, requireRole('doctor'), (req, res) => {
   try {
     const patients = db.prepare(`
       SELECT id, name, email, role, dob, gender, phone, created_at
@@ -77,8 +89,18 @@ router.get('/', authenticateToken, (req, res) => {
   }
 });
 
+// P18: owner-or-doctor guard for per-patient reads. A patient may read ONLY
+// their own record (IDOR fix — today any valid token could read anyone by
+// changing :id); doctors read any chart; admins get no clinical history.
+function requirePatientAccess(req, res, next) {
+  const patientId = req.params.id;
+  if (req.user.role === 'doctor') return next();
+  if (req.user.role === 'patient' && req.user.id === patientId) return next();
+  return res.status(403).json({ error: 'You do not have access to this patient record' });
+}
+
 // GET /patients/:id/history - Full history for Doctor view (and Patient history view)
-router.get('/:id/history', authenticateToken, (req, res) => {
+router.get('/:id/history', authenticateToken, requirePatientAccess, (req, res) => {
   try {
     const patientId = req.params.id;
 
@@ -179,7 +201,7 @@ router.get('/:id/history', authenticateToken, (req, res) => {
 });
 
 // GET /patients/:id/dashboard - Patient Home View
-router.get('/:id/dashboard', authenticateToken, (req, res) => {
+router.get('/:id/dashboard', authenticateToken, requirePatientAccess, (req, res) => {
   try {
     const patientId = req.params.id;
 
@@ -273,7 +295,7 @@ router.get('/:id/dashboard', authenticateToken, (req, res) => {
 });
 
 // GET /patients/:id/self-logs - Time-series trend data joined with lab_tests reference ranges
-router.get('/:id/self-logs', authenticateToken, (req, res) => {
+router.get('/:id/self-logs', authenticateToken, requirePatientAccess, (req, res) => {
   try {
     const patientId = req.params.id;
     const { type, label } = req.query;

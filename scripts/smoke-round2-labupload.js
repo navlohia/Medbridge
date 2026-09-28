@@ -45,11 +45,12 @@ async function makeReportImage(page) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const BASE = 'http://localhost:5173';
 
-  await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => localStorage.clear());
-  await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => { sessionStorage.clear(); localStorage.clear(); });
+  await page.goto(BASE + '/auth/patient', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(600);
-  await page.locator('button', { hasText: 'Patient 1' }).first().click();
+  await page.locator('input[type=email]').fill('patient1@medbridge.com');
+  await page.locator('input[type=password]').fill('demo1234');
   await page.locator('button[type=submit]').click();
   await page.waitForURL('**/patient', { timeout: 8000 });
   await page.waitForTimeout(1200);
@@ -89,16 +90,29 @@ async function makeReportImage(page) {
   await page.locator('input[placeholder="Unit"]').last().fill('mg/dL');
   check('manual add-row works end to end', true);
 
+  // Snapshot pending labs BEFORE confirming so the "Matched" assertion is
+  // honest: a re-run after the FBS order was already consumed legitimately
+  // shows no "Matched" line (nothing left to match).
+  const fbsPendingBefore = await page.evaluate(async () => {
+    const t = sessionStorage.getItem('medbridge_token');
+    const u = JSON.parse(sessionStorage.getItem('medbridge_user'));
+    const r = await fetch(`/api/patients/${u.id}/dashboard`, { headers: { Authorization: `Bearer ${t}` } });
+    if (!r.ok) return false;
+    const d = await r.json();
+    return (d.pending_labs || []).some(l => /fasting blood sugar/i.test(l.test_name || ''));
+  });
+
   await page.locator('button', { hasText: 'Save to my record' }).click();
   await page.waitForTimeout(1800);
   const saved = await page.locator('text=Saved 1 reading').first().count() >= 1
     || await page.locator('text=health record').first().count() >= 1;
   check('confirm writes and shows summary', saved);
 
-  // matched-order feedback present (Phase 166)
+  // matched-order feedback present (Phase 166) — asserted only when a pending
+  // order existed before the confirm.
   const matched = await page.locator('text=Matched').first().count() >= 1
     || await page.locator('text=matched').first().count() >= 1;
-  check('matched pending order feedback shown', matched);
+  check('matched pending order feedback shown', !fbsPendingBefore || matched, `pending-before=${fbsPendingBefore} matched=${matched}`);
 
   await page.locator('button', { hasText: 'Done' }).click();
   await page.waitForTimeout(1200);

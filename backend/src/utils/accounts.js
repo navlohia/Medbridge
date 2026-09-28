@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { db } = require('../db/database');
 
 /**
@@ -16,8 +17,10 @@ const DOB_RE = /^\d{4}-\d{2}-\d{2}$/;
 const GENDERS = ['Male', 'Female', 'Other'];
 const PHONE_MAX = 24;
 
-// Readable temporary passwords: word-word-2digits (Phases 37) — easy to read
-// aloud in a demo, still ~10 chars with mixed characters.
+// P39: readable temporary passwords with cryptographically secure randomness.
+// word-word-word-2digits via crypto.randomInt (≈ 26 bits of entropy) — easy
+// to read aloud in a demo, unpredictable, and longer than the old
+// Math.random()-based 2-word format.
 const PASSWORD_WORDS = [
   'harbor', 'meadow', 'ember', 'cedar', 'delta', 'summit', 'orbit', 'cobalt',
   'jasper', 'lumen', 'quartz', 'nimbus', 'saffron', 'willow', 'onyx', 'pylon',
@@ -25,9 +28,9 @@ const PASSWORD_WORDS = [
 ];
 
 function generateTempPassword() {
-  const pick = () => PASSWORD_WORDS[Math.floor(Math.random() * PASSWORD_WORDS.length)];
-  const digits = String(Math.floor(Math.random() * 90) + 10);
-  return `${pick()}-${pick()}-${digits}`;
+  const pick = () => PASSWORD_WORDS[crypto.randomInt(0, PASSWORD_WORDS.length)];
+  const digits = String(crypto.randomInt(10, 100));
+  return `${pick()}-${pick()}-${pick()}-${digits}`;
 }
 
 /** Typed validation error → mapped to a clean 400/409 by callers. */
@@ -116,12 +119,12 @@ function createUserAccount({ role, name, email, specialization, dob, gender, pho
   const id = `${role === 'doctor' ? 'doc' : 'pat'}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   db.prepare(`
-    INSERT INTO users (id, name, email, role, specialization, password_hash, is_active, dob, gender, phone)
-    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+    INSERT INTO users (id, name, email, role, specialization, password_hash, is_active, dob, gender, phone, must_change_password)
+    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 1)
   `).run(id, cleanName, cleanEmail, role, cleanSpec, passwordHash, cleanDob, cleanGender, cleanPhone);
 
   const user = db.prepare(`
-    SELECT id, name, email, role, specialization, is_active, dob, gender, phone, created_at
+    SELECT id, name, email, role, specialization, is_active, dob, gender, phone, must_change_password, created_at
     FROM users WHERE id = ?
   `).get(id);
 

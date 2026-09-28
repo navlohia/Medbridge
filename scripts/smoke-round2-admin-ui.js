@@ -16,12 +16,13 @@ function check(name, cond, detail = '') {
   const BASE = 'http://localhost:5173';
   const stamp = Date.now().toString().slice(-6);
 
-  // Login as admin
-  await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => localStorage.clear());
-  await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
+  // Login as admin (form login at /auth/admin — P14+; token in sessionStorage P04)
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => { sessionStorage.clear(); localStorage.clear(); });
+  await page.goto(BASE + '/auth/admin', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(600);
-  await page.locator('button', { hasText: 'Admin' }).first().click();
+  await page.locator('input[type=email]').fill('admin@medbridge.com');
+  await page.locator('input[type=password]').fill('demo1234');
   await page.locator('button[type=submit]').click();
   await page.waitForURL('**/admin', { timeout: 8000 });
   await page.waitForTimeout(800);
@@ -47,7 +48,7 @@ function check(name, cond, detail = '') {
 
   // Created doctor is immediately bookable: check via public doctors API from patient side
   const docListed = await page.evaluate(async (email) => {
-    const token = localStorage.getItem('medbridge_token');
+    const token = sessionStorage.getItem('medbridge_token');
     const res = await fetch('/api/doctors', { headers: { Authorization: `Bearer ${token}` } });
     const list = await res.json();
     return list.some(d => d.email === email);
@@ -69,14 +70,15 @@ function check(name, cond, detail = '') {
   const newPatRow = await page.locator(`text=UI Patient ${stamp}`).count();
   check('created patient appears in table immediately', newPatRow >= 1);
 
-  // Patient is immediately visible in doctor's PatientSelector data
+  // Patient is immediately visible in the admin patients list
+  // (P18: /api/patients is doctor-only now, so verify via /api/admin/patients)
   const patListed = await page.evaluate(async (email) => {
-    const token = localStorage.getItem('medbridge_token');
-    const res = await fetch('/api/patients', { headers: { Authorization: `Bearer ${token}` } });
+    const token = sessionStorage.getItem('medbridge_token');
+    const res = await fetch('/api/admin/patients', { headers: { Authorization: `Bearer ${token}` } });
     const list = await res.json();
-    return list.some(p => p.email === email);
+    return Array.isArray(list) && list.some(p => p.email === email);
   }, `ui.patient${stamp}@medbridge.com`);
-  check('created patient immediately in doctor selector data', patListed);
+  check('created patient immediately in admin patients list', patListed);
 
   // ---- Phase 130: search/filter both tables ----
   await page.locator('input[placeholder*="Search name or email"]').fill(`ui.patient${stamp}`);

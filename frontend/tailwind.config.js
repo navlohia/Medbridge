@@ -7,75 +7,93 @@ export default {
   theme: {
     extend: {
       colors: {
+        // P43: every token resolves to a CSS variable (raw RGB triplets) so the
+        // palette has ONE source in index.css :root — and alpha modifiers
+        // (bg-clinical-600/20) keep working via <alpha-value>.
+        //
+        // primary = deep ink (warm green-grey), anchor #14201F
         primary: {
-          950: '#090D16',
-          900: '#0F172A',
-          850: '#152033',
-          800: '#1E293B',
-          700: '#334155',
-          600: '#475569',
-          500: '#64748B',
-          400: '#94A3B8',
-          300: '#CBD5E1',
-          200: '#E2E8F0',
-          100: '#F1F5F9',
-          50: '#F8FAFC'
+          950: 'rgb(var(--c-ink-950) / <alpha-value>)',
+          900: 'rgb(var(--c-ink-900) / <alpha-value>)',
+          850: 'rgb(var(--c-ink-800) / <alpha-value>)',
+          800: 'rgb(var(--c-ink-800) / <alpha-value>)',
+          700: 'rgb(var(--c-ink-700) / <alpha-value>)',
+          600: 'rgb(var(--c-ink-600) / <alpha-value>)',
+          500: 'rgb(var(--c-ink-500) / <alpha-value>)',
+          400: 'rgb(var(--c-ink-400) / <alpha-value>)',
+          300: 'rgb(var(--c-ink-300) / <alpha-value>)',
+          200: 'rgb(var(--c-ink-200) / <alpha-value>)',
+          100: 'rgb(var(--c-ink-100) / <alpha-value>)',
+          50: 'rgb(var(--c-ink-50) / <alpha-value>)'
         },
+        // clinical = spruce / verdigris, anchor #1F5E5A, hover #174B48
         clinical: {
-          900: '#134E4A',
-          800: '#115E59',
-          700: '#0F766E',
-          600: '#0D9488',
-          500: '#14B8A6',
-          400: '#2DD4BF',
-          300: '#5EEAD4',
-          200: '#99F6E4',
-          100: '#CCFBF1',
-          50: '#F0FDFA'
+          900: 'rgb(var(--c-spruce-900) / <alpha-value>)',
+          800: 'rgb(var(--c-spruce-800) / <alpha-value>)',
+          700: 'rgb(var(--c-spruce-700) / <alpha-value>)',
+          600: 'rgb(var(--c-spruce-600) / <alpha-value>)',
+          500: 'rgb(var(--c-spruce-500) / <alpha-value>)',
+          400: 'rgb(var(--c-spruce-400) / <alpha-value>)',
+          300: 'rgb(var(--c-spruce-300) / <alpha-value>)',
+          200: 'rgb(var(--c-spruce-200) / <alpha-value>)',
+          100: 'rgb(var(--c-spruce-100) / <alpha-value>)',
+          50: 'rgb(var(--c-spruce-50) / <alpha-value>)'
+        },
+        // accent = clay, used sparingly (ONE warm accent)
+        accent: {
+          DEFAULT: 'rgb(var(--c-clay-600) / <alpha-value>)',
+          600: 'rgb(var(--c-clay-600) / <alpha-value>)',
+          500: 'rgb(var(--c-clay-500) / <alpha-value>)',
+          text: 'rgb(var(--c-clay-text) / <alpha-value>)',
+          bg: 'rgb(var(--c-clay-bg) / <alpha-value>)',
+          border: 'rgb(var(--c-clay-border) / <alpha-value>)'
         },
         surface: {
-          base: '#F8FAFC',
-          warm: '#FAFAF9',
-          card: '#FFFFFF',
-          border: '#E2E8F0',
-          subtle: '#F1F5F9',
-          hover: '#F8FAFC'
+          base: 'rgb(var(--c-paper) / <alpha-value>)',      // warm off-white paper
+          warm: 'rgb(var(--c-paper-warm) / <alpha-value>)',
+          card: 'rgb(var(--c-card) / <alpha-value>)',
+          border: 'rgb(var(--c-hairline) / <alpha-value>)', // hairline 1px borders
+          subtle: 'rgb(var(--c-paper-subtle) / <alpha-value>)',
+          hover: 'rgb(var(--c-paper-hover) / <alpha-value>)'
         },
         warning: {
-          DEFAULT: '#B45309',
-          text: '#92400E',
-          bg: '#FFFBEB',
-          border: '#FDE68A'
+          DEFAULT: 'rgb(var(--c-warning) / <alpha-value>)',
+          text: 'rgb(var(--c-warning-text) / <alpha-value>)',
+          bg: 'rgb(var(--c-warning-bg) / <alpha-value>)',
+          border: 'rgb(var(--c-warning-border) / <alpha-value>)'
         },
         danger: {
-          DEFAULT: '#B91C1C',
-          text: '#991B1B',
-          bg: '#FEF2F2',
-          border: '#FECACA'
+          DEFAULT: 'rgb(var(--c-danger) / <alpha-value>)',
+          text: 'rgb(var(--c-danger-text) / <alpha-value>)',
+          bg: 'rgb(var(--c-danger-bg) / <alpha-value>)',
+          border: 'rgb(var(--c-danger-border) / <alpha-value>)'
         },
         success: {
-          DEFAULT: '#15803D',
-          text: '#166534',
-          bg: '#F0FDF4',
-          border: '#BBF7D0'
+          DEFAULT: 'rgb(var(--c-success) / <alpha-value>)',
+          text: 'rgb(var(--c-success-text) / <alpha-value>)',
+          bg: 'rgb(var(--c-success-bg) / <alpha-value>)',
+          border: 'rgb(var(--c-success-border) / <alpha-value>)'
         }
       },
       fontFamily: {
-        sans: ['"Inter"', 'system-ui', '-apple-system', 'sans-serif'],
-        heading: ['"Plus Jakarta Sans"', '"Inter"', 'system-ui', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'monospace']
+        // P44 wires the @fontsource packages; fallbacks keep the app sane offline.
+        sans: ['"Hanken Grotesk"', 'system-ui', '-apple-system', 'sans-serif'],
+        heading: ['"Fraunces"', '"Hanken Grotesk"', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace']
       },
       boxShadow: {
-        'subtle': '0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.03)',
-        'card': '0 2px 6px -1px rgba(15, 23, 42, 0.06), 0 1px 4px -2px rgba(15, 23, 42, 0.04)',
-        'modal': '0 20px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.08)',
-        'glow-teal': '0 0 16px -2px rgba(20, 184, 166, 0.25)',
-        'glow-teal-lg': '0 0 32px -6px rgba(20, 184, 166, 0.45)',
-        'glow-danger': '0 0 16px -4px rgba(185, 28, 28, 0.35)'
+        // P43: hairline borders carry the structure; shadows only for floating
+        // layers. The old glow shadows are deliberately dead (map to none).
+        'subtle': '0 1px 2px 0 rgb(20 32 31 / 0.04)',
+        'card': '0 1px 3px 0 rgb(20 32 31 / 0.05), 0 1px 2px -1px rgb(20 32 31 / 0.03)',
+        'modal': '0 24px 48px -12px rgb(20 32 31 / 0.18), 0 4px 12px -4px rgb(20 32 31 / 0.08)',
+        'glow-teal': '0 0 0 0 transparent',
+        'glow-teal-lg': '0 0 0 0 transparent',
+        'glow-danger': '0 0 0 0 transparent'
       },
       borderRadius: {
-        'card': '0.625rem', // 10px consistent radius
-        'button': '0.5rem'   // 8px consistent radius
+        'card': '0.625rem',
+        'button': '0.5rem'
       },
       keyframes: {
         fadeIn: {
@@ -96,8 +114,8 @@ export default {
         }
       },
       animation: {
-        fadeIn: 'fadeIn 200ms cubic-bezier(0.16, 1, 0.3, 1)',
-        slideUp: 'slideUp 320ms cubic-bezier(0.16, 1, 0.3, 1) both',
+        fadeIn: 'fadeIn 180ms cubic-bezier(0.16, 1, 0.3, 1)',
+        slideUp: 'slideUp 220ms cubic-bezier(0.16, 1, 0.3, 1) both',
         pulseSoft: 'pulseSoft 2.2s ease-in-out infinite',
         drawPulse: 'drawPulse 2.8s ease-in-out infinite'
       }

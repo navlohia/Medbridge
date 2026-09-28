@@ -1,8 +1,21 @@
 const express = require('express');
+const { emit } = require('../utils/events');
 const router = express.Router();
 const { db, transaction } = require('../db/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { DEFAULT_APPOINTMENT_TIME } = require('../config');
+
+/**
+ * A REAL calendar date, not merely the right shape. A regex-only check let
+ * '9999-13-45' through and it was written to the DB as a permanent, unbookable
+ * appointment date. The round-trip comparison rejects overflow like 02-31.
+ */
+function isRealDateStr(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
 
 /**
  * Checks for therapeutic class duplication and clinical drug interactions
@@ -156,8 +169,8 @@ router.post('/', authenticateToken, requireRole('doctor'), (req, res) => {
       patient_id,
       diagnosis_id,
       notes,
-      prescriptions = [],
-      lab_orders = [],
+      prescriptions,
+      lab_orders,
       next_appointment_date,
       next_appointment_time,
       appointment_reason
@@ -167,13 +180,48 @@ router.post('/', authenticateToken, requireRole('doctor'), (req, res) => {
       return res.status(400).json({ error: 'patient_id and diagnosis_id are required' });
     }
 
+    // A destructuring default only fires for `undefined`, so an explicit
+    // `prescriptions: null` reached .map() and 500'd, losing the entire visit.
+    const rxList = Array.isArray(prescriptions) ? prescriptions : [];
+    const labList = Array.isArray(lab_orders) ? lab_orders : [];
+
+    if (req.body.visit_date && !isRealDateStr(req.body.visit_date)) {
+      return res.status(400).json({ error: 'visit_date must be a real calendar date in YYYY-MM-DD format' });
+    }
+
     const doctorId = req.user.id;
     const visitDate = req.body.visit_date || require('../utils/scheduling').localDateStr();
     const visitId = `v_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     // Evaluate conflicts before saving (warn, never block)
-    const newMedIds = prescriptions.map(p => p.medicine_id).filter(Boolean);
+    const newMedIds = rxList.map(p => p && p.medicine_id).filter(Boolean);
     const conflictWarnings = checkDrugConflicts(patient_id, newMedIds);
+
+    // Follow-up slot: validate the date and check availability BEFORE opening the
+    // transaction. Previously this insert skipped every check POST /appointments
+    // performs, so logging a visit silently burned a real slot as a 'confirmed'
+    // appointment that the doctor then had no way to release.
+    let followUp = null;
+    const rawFollowUpDate = next_appointment_date === undefined || next_appointment_date === null
+      ? '' : String(next_appointment_date).trim();
+    if (rawFollowUpDate !== '') {
+      if (!isRealDateStr(rawFollowUpDate)) {
+        return res.status(400).json({ error: 'next_appointment_date must be a real calendar date in YYYY-MM-DD format' });
+      }
+      const rawTime = next_appointment_time ? String(next_appointment_time).trim() : '';
+      const slotTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(rawTime) ? rawTime : DEFAULT_APPOINTMENT_TIME;
+      const taken = db.prepare(`
+        SELECT id FROM appointments
+        WHERE doctor_id = ? AND appointment_date = ? AND appointment_time = ? AND status != 'cancelled'
+        LIMIT 1
+      `).get(doctorId, rawFollowUpDate, slotTime);
+      if (taken) {
+        return res.status(409).json({
+          error: 'That follow-up slot is already taken. Pick another time, or leave the follow-up blank.'
+        });
+      }
+      followUp = { date: rawFollowUpDate, time: slotTime };
+    }
 
     // Save everything in one single atomic SQLite transaction
     transaction((database) => {
@@ -188,8 +236,8 @@ router.post('/', authenticateToken, requireRole('doctor'), (req, res) => {
         INSERT INTO prescriptions (id, visit_id, medicine_id, dosage, duration)
         VALUES (?, ?, ?, ?, ?)
       `);
-      for (const p of prescriptions) {
-        if (!p.medicine_id) continue;
+      for (const p of rxList) {
+        if (!p || !p.medicine_id) continue;
         const rxId = `rx_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         insertPrescription.run(rxId, visitId, p.medicine_id, p.dosage || 'As directed', p.duration || '30 days');
       }
@@ -199,8 +247,8 @@ router.post('/', authenticateToken, requireRole('doctor'), (req, res) => {
         INSERT INTO lab_orders (id, visit_id, test_name, scheduled_date, status)
         VALUES (?, ?, ?, ?, 'pending')
       `);
-      for (const lo of lab_orders) {
-        if (!lo.test_name) continue;
+      for (const lo of labList) {
+        if (!lo || !lo.test_name) continue;
         const loId = `lo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         insertLabOrder.run(
           loId,
@@ -210,13 +258,9 @@ router.post('/', authenticateToken, requireRole('doctor'), (req, res) => {
         );
       }
 
-      // 4. Insert Next Appointment if provided (optional HH:MM time; schema-consistent default)
-      if (next_appointment_date) {
+      // 4. Insert the follow-up appointment (validated + conflict-checked above)
+      if (followUp) {
         const aptId = `apt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        let apptTime = next_appointment_time ? String(next_appointment_time).trim() : '';
-        if (apptTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(apptTime)) {
-          apptTime = '';
-        }
         database.prepare(`
           INSERT INTO appointments (id, patient_id, doctor_id, appointment_date, appointment_time, reason)
           VALUES (?, ?, ?, ?, ?, ?)
@@ -224,8 +268,8 @@ router.post('/', authenticateToken, requireRole('doctor'), (req, res) => {
           aptId,
           patient_id,
           doctorId,
-          next_appointment_date,
-          apptTime || DEFAULT_APPOINTMENT_TIME,
+          followUp.date,
+          followUp.time,
           appointment_reason || 'Routine follow-up'
         );
       }
@@ -235,6 +279,19 @@ router.post('/', authenticateToken, requireRole('doctor'), (req, res) => {
       message: 'Visit and clinical records logged successfully',
       visit_id: visitId,
       conflict_warnings: conflictWarnings
+    });
+
+    // P27: visit.created → ONLY the patient's tabs (per brief; clinical event,
+    // admins are not in the audience).
+    const patientName = db.prepare('SELECT name FROM users WHERE id = ?').get(patient_id)?.name || 'The patient';
+    emit({
+      type: 'visit.created',
+      ids: [patient_id],
+      actor_name: req.user.name,
+      summary: `Dr. ${req.user.name.replace(/^Dr\.?\s*/i, '')} documented a visit for ${patientName}`,
+      visit_id: visitId,
+      patient_id,
+      doctor_id: doctorId
     });
   } catch (error) {
     console.error('Error creating visit:', error);

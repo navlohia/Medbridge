@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { localDateStr } from '../../utils/date';
 import {
   Stethoscope,
   Pill,
@@ -54,7 +55,7 @@ export default function VisitLoggerModal({ isOpen, onClose, patient, onVisitLogg
   const listRef = useRef(null);
   const highlightRef = useRef(null);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = localDateStr();
 
   // Load catalogs + reset form when opened
   useEffect(() => {
@@ -72,9 +73,11 @@ export default function VisitLoggerModal({ isOpen, onClose, patient, onVisitLogg
     setSubmitError(null);
     setAppointmentReason('Routine clinical follow-up');
 
-    const d = new Date();
-    d.setDate(d.getDate() + 30);
-    setNextAppointmentDate(d.toISOString().split('T')[0]);
+    // Deliberately empty. This used to pre-fill today+30, so EVERY visit save
+    // booked a follow-up appointment whether the doctor asked for one or not —
+    // which silently burned real slots. A follow-up is now created only when the
+    // doctor actually picks a date below.
+    setNextAppointmentDate('');
 
     const loadCatalogs = async () => {
       try {
@@ -250,7 +253,7 @@ export default function VisitLoggerModal({ isOpen, onClose, patient, onVisitLogg
     d.setDate(d.getDate() + 14);
     setLabOrders(prev => [
       ...prev,
-      { test_name: testName, scheduled_date: d.toISOString().split('T')[0] }
+      { test_name: testName, scheduled_date: localDateStr(d) }
     ]);
   };
 

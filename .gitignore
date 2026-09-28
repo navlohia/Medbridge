@@ -9,3 +9,10 @@ frontend/dist/
 
 # Round 2: lab-report photo uploads (image bytes live here, paths in DB)
 backend/uploads/
+
+# Database backups hold bcrypt hashes + full PHI, and match none of the rules
+# above (the live DB is covered by an exact-path rule). Keep them out.
+backend/src/db/backup/
+
+# Bulk archives at the repo root are build/seed dumps, not source.
+*.zip

@@ -1,7 +1,3 @@
-/**
- * Round 2 routing + admin smoke test (Phases 99–108, 109 partial).
- * Requires: backend :5000 seeded, vite dev :5173.
- */
 const { chromium } = require('playwright');
 
 let passed = 0, failed = 0;
@@ -15,21 +11,30 @@ function check(name, cond, detail = '') {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const BASE = 'http://localhost:5173';
 
-  // Start logged out
+  const loginAs = async (email) => {
+    // P14: sign-in lives at /auth/<role>; "/" is the role picker
+    const role = email.startsWith('admin') ? 'admin' : email.startsWith('patient') ? 'patient' : 'doctor';
+    await page.evaluate(() => { sessionStorage.clear(); localStorage.clear(); }).catch(() => {});
+    await page.goto(`${BASE}/auth/${role}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(600);
+    await page.locator('input[type=email]').fill(email);
+    await page.locator('input[type=password]').fill('demo1234');
+    await page.locator('button[type=submit]').click();
+    await page.waitForTimeout(1400);
+  };
+
+  // Start logged out (P08: sessions live in sessionStorage now)
   await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => { localStorage.clear(); });
+  await page.evaluate(() => { sessionStorage.clear(); localStorage.clear(); });
+
+  // No persona tiles on login anymore (removed in P08)
   await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(800);
+  const personaButtons = await page.locator('text=Quick Demo Personas').count();
+  check('login shows no persona tiles (removed P08)', personaButtons === 0);
 
-  // 4 persona tiles on login
-  const personaButtons = await page.locator('button', { hasText: 'Admin' }).count();
-  check('login shows admin persona tile', personaButtons >= 1);
-
-  // Login as admin via the persona + submit
-  await page.locator('button', { hasText: 'Admin' }).first().click();
-  await page.locator('button[type=submit]').click();
-  await page.waitForURL('**/admin', { timeout: 8000 }).catch(() => {});
-  await page.waitForTimeout(1200);
+  // Login as admin through the form
+  await loginAs('admin@medbridge.com');
   check('admin login redirects to /admin', page.url().includes('/admin'), page.url());
   const adminHeading = await page.locator('h1', { hasText: 'Admin Console' }).count();
   check('admin console renders', adminHeading === 1);
@@ -56,26 +61,22 @@ function check(name, cond, detail = '') {
   const notFound = await page.locator('text=Page not found').count();
   check('unknown route shows branded 404', notFound === 1);
 
-  // Switch to doctor via quick switcher
-  await page.goto(BASE + '/admin', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(600);
-  await page.locator('button[title*="Dr. Evelyn Reed"]').click();
-  await page.waitForTimeout(1200);
-  check('demo switcher: doctor lands on /doctor', page.url().includes('/doctor'), page.url());
+  // Sign out → login as doctor through the form
+  await loginAs('doctor@medbridge.com');
+  check('doctor login lands on /doctor', page.url().includes('/doctor'), page.url());
   const workspace = await page.locator('h1', { hasText: 'Clinician Workspace' }).count();
   check('doctor dashboard renders', workspace === 1);
 
   // Patient route
-  await page.locator('button[title*="Marcus Vance"]').click();
-  await page.waitForTimeout(1200);
-  check('demo switcher: patient lands on /patient', page.url().includes('/patient'), page.url());
+  await loginAs('patient1@medbridge.com');
+  check('patient login lands on /patient', page.url().includes('/patient'), page.url());
 
-  // Unauthenticated → login redirect
-  await page.evaluate(() => { localStorage.clear(); });
+  // Unauthenticated → role picker (new entry flow since P14)
+  await page.evaluate(() => { sessionStorage.clear(); localStorage.clear(); });
   await page.goto(BASE + '/patient', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(800);
-  const loginForm = await page.locator('button[type=submit]').count();
-  check('unauthenticated /patient shows login', loginForm >= 1);
+  const roleCards = await page.locator('text=Choose your portal').count();
+  check('unauthenticated /patient shows role picker', roleCards >= 1);
 
   await browser.close();
   console.log(`\n=== Round 2 routing smoke: ${passed} passed, ${failed} failed ===`);

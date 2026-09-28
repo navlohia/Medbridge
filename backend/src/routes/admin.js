@@ -4,6 +4,7 @@ const { db } = require('../db/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { createUserAccount, AccountValidationError, publicUser } = require('../utils/accounts');
 const { localDateStr } = require('../utils/scheduling');
+const { emit, adminIds } = require('../utils/events');
 
 // Every route below requires an authenticated admin (Phases 26, 35)
 router.use(authenticateToken, requireRole('admin'));
@@ -91,6 +92,16 @@ router.post('/doctors', (req, res) => {
       user,
       temp_password: tempPassword
     });
+
+    // P28: account.created → admins (account-oversight event, no clinical data).
+    emit({
+      type: 'account.created',
+      ids: adminIds(),
+      actor_name: req.user.name,
+      summary: `Dr. ${user.name.replace(/^Dr\.?\s*/i, '')} added to the clinic roster`,
+      user_id: user.id,
+      role: 'doctor'
+    });
   } catch (error) {
     if (error instanceof AccountValidationError) {
       return res.status(error.status).json({ error: error.message });
@@ -140,6 +151,16 @@ router.post('/patients', (req, res) => {
       user,
       temp_password: tempPassword
     });
+
+    // P28: account.created → admins.
+    emit({
+      type: 'account.created',
+      ids: adminIds(),
+      actor_name: req.user.name,
+      summary: `${user.name} joined the clinic as a patient`,
+      user_id: user.id,
+      role: 'patient'
+    });
   } catch (error) {
     if (error instanceof AccountValidationError) {
       return res.status(error.status).json({ error: error.message });
@@ -177,6 +198,36 @@ router.patch('/users/:id/status', (req, res) => {
         : `${target.name} deactivated — sign-in blocked; all history is untouched.`,
       user: updated
     });
+
+    if (desired) {
+      // P28: account.status_changed → admins (and the affected account's tabs).
+      emit({
+        type: 'account.status_changed',
+        ids: [...adminIds(), target.id],
+        actor_name: req.user.name,
+        summary: `${target.name} was reactivated`,
+        user_id: target.id,
+        is_active: true
+      });
+    } else {
+      // P28: session.revoked → the just-deactivated user's tabs sign out live;
+      // admins get the ordinary status event.
+      emit({
+        type: 'session.revoked',
+        ids: [target.id],
+        actor_name: req.user.name,
+        summary: 'Your account has been deactivated. You have been signed out.',
+        user_id: target.id
+      });
+      emit({
+        type: 'account.status_changed',
+        ids: adminIds(),
+        actor_name: req.user.name,
+        summary: `${target.name} was deactivated`,
+        user_id: target.id,
+        is_active: false
+      });
+    }
   } catch (error) {
     console.error('Error updating account status (admin):', error);
     res.status(500).json({ error: 'Failed to update account status' });

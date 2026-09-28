@@ -1,20 +1,11 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Stethoscope, User, LogOut, ArrowRightLeft, ShieldCheck } from 'lucide-react';
+import { Stethoscope, User, LogOut, ShieldCheck } from 'lucide-react';
 import LogoMark from './LogoMark';
+import { LiveIndicator } from '../../realtime/RealtimeProvider';
 
 export default function Navbar() {
-  const { user, logout, login } = useAuth();
-
-  const handleQuickSwitch = async (email) => {
-    try {
-      await login(email, 'demo1234');
-      window.history.replaceState({}, '', '/');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    } catch (err) {
-      console.error('Quick switch failed:', err);
-    }
-  };
+  const { user, logout } = useAuth();
 
   const roleChip = user?.role === 'doctor'
     ? { label: 'Clinician', cls: 'bg-clinical-100 text-clinical-800 border-clinical-200' }
@@ -25,8 +16,9 @@ export default function Navbar() {
   return (
     <header className="bg-surface-card border-b border-surface-border sticky top-0 z-30 shadow-subtle">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Brand */}
+        {/* Brand + live indicator (P25) */}
         <div className="flex items-center gap-3">
+          <LiveIndicator />
           <LogoMark size="md" />
           <div>
             <div className="flex items-center gap-2">
@@ -42,60 +34,6 @@ export default function Navbar() {
         {/* User context & Quick switcher */}
         {user && (
           <div className="flex items-center gap-3 sm:gap-4">
-            {/* Quick Demo Switcher Pills */}
-            <div className="hidden lg:flex items-center gap-1.5 bg-surface-subtle p-1 rounded-button border border-surface-border text-xs">
-              <span className="text-xs font-medium text-primary-500 px-2 flex items-center gap-1">
-                <ArrowRightLeft className="w-3 h-3 text-primary-400" /> Demo Switch:
-              </span>
-              <button
-                onClick={() => handleQuickSwitch('doctor@medbridge.com')}
-                className={`px-2 py-1 rounded transition-med font-medium cursor-pointer ${
-                  user.role === 'doctor'
-                    ? 'bg-clinical-600 text-white shadow-subtle'
-                    : 'text-primary-600 hover:text-primary-900 hover:bg-white'
-                }`}
-                title="Switch to Dr. Evelyn Reed"
-              >
-                Dr. Reed
-              </button>
-              <button
-                onClick={() => handleQuickSwitch('patient1@medbridge.com')}
-                className={`px-2 py-1 rounded transition-med font-medium cursor-pointer ${
-                  user.role === 'patient' && user.email === 'patient1@medbridge.com'
-                    ? 'bg-clinical-600 text-white shadow-subtle'
-                    : 'text-primary-600 hover:text-primary-900 hover:bg-white'
-                }`}
-                title="Switch to Marcus Vance"
-              >
-                Marcus (Patient 1)
-              </button>
-              <button
-                onClick={() => handleQuickSwitch('patient2@medbridge.com')}
-                className={`px-2 py-1 rounded transition-med font-medium cursor-pointer ${
-                  user.email === 'patient2@medbridge.com'
-                    ? 'bg-clinical-600 text-white shadow-subtle'
-                    : 'text-primary-600 hover:text-primary-900 hover:bg-white'
-                }`}
-                title="Switch to Elena Rostova"
-              >
-                Elena (Patient 2)
-              </button>
-              <button
-                onClick={() => handleQuickSwitch('admin@medbridge.com')}
-                className={`px-2 py-1 rounded transition-med font-medium cursor-pointer ${
-                  user.role === 'admin'
-                    ? 'bg-primary-950 text-white shadow-subtle'
-                    : 'text-primary-600 hover:text-primary-900 hover:bg-white'
-                }`}
-                title="Switch to Priya Nair (Admin)"
-              >
-                <span className="inline-flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3" />
-                  Admin
-                </span>
-              </button>
-            </div>
-
             {/* Current user badge */}
             <div className="flex items-center gap-2 pl-2 sm:border-l sm:border-surface-border">
               <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-heading font-semibold text-xs border border-primary-200">

@@ -1,4 +1,5 @@
 const express = require('express');
+const { emit, doctorIds } = require('../utils/events');
 const router = express.Router();
 const { db, transaction } = require('../db/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
@@ -123,6 +124,18 @@ router.post('/entry', authenticateToken, requireRole('patient'), (req, res) => {
       entry: fetchEntry(entryId, patientId),
       completed_lab_orders: completedLabOrders
     });
+
+    // P27: selflog.created → all doctors (the journal is the doctors' intake queue).
+    const patientName = db.prepare('SELECT name FROM users WHERE id = ?').get(patientId)?.name || 'A patient';
+    const topSymptom = cleanSymptoms.reduce((a, b) => (b.severity > a.severity ? b : a));
+    emit({
+      type: 'selflog.created',
+      ids: doctorIds(),
+      actor_name: req.user.name,
+      summary: `${patientName} logged ${cleanSymptoms.length} symptom${cleanSymptoms.length > 1 ? 's' : ''} (worst: ${topSymptom.label} ${topSymptom.severity}/5)`,
+      patient_id: patientId,
+      entry_id: entryId
+    });
   } catch (error) {
     console.error('Error recording symptom entry:', error);
     res.status(500).json({ error: 'Failed to record symptom entry' });
@@ -172,6 +185,17 @@ router.post('/', authenticateToken, requireRole('patient'), (req, res) => {
       message: `${log_type === 'vital' ? 'Vital reading' : 'Symptom'} logged successfully`,
       log: savedLog,
       completed_lab_orders: completedLabOrders
+    });
+
+    // P27: single self-logs (vitals + legacy symptom rows) also notify doctors.
+    const patientName = db.prepare('SELECT name FROM users WHERE id = ?').get(patientId)?.name || 'A patient';
+    emit({
+      type: 'selflog.created',
+      ids: doctorIds(),
+      actor_name: req.user.name,
+      summary: `${patientName} logged ${label.trim()} ${String(value).trim()}${unit ? ' ' + unit.trim() : ''}`,
+      patient_id: patientId,
+      log_id: logId
     });
   } catch (error) {
     console.error('Error recording self-log:', error);
@@ -240,6 +264,16 @@ router.post('/entry/:entryId/comment', authenticateToken, requireRole('doctor'),
     res.status(201).json({
       message: 'Guidance added — the patient can now see it on their journal entry.',
       comment: saved
+    });
+
+    // P27: guidance.created → the patient's tabs.
+    emit({
+      type: 'guidance.created',
+      ids: [patientId],
+      actor_name: req.user.name,
+      summary: `${req.user.name} added guidance on your journal entry`,
+      patient_id: patientId,
+      entry_id: effectiveEntryId
     });
   } catch (error) {
     console.error('Error adding symptom comment:', error);

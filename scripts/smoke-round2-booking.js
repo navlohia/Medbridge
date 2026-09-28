@@ -30,12 +30,13 @@ function localDate(offset) {
   }
   console.log(`booking target date: ${target}`);
 
-  // ---- Patient books a slot ----
-  await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => localStorage.clear());
-  await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
+  // ---- Patient books a slot (form login at /auth/patient — P14+) ----
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => { sessionStorage.clear(); localStorage.clear(); });
+  await page.goto(BASE + '/auth/patient', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(600);
-  await page.locator('button', { hasText: 'Patient 1' }).first().click();
+  await page.locator('input[type=email]').fill('patient1@medbridge.com');
+  await page.locator('input[type=password]').fill('demo1234');
   await page.locator('button[type=submit]').click();
   await page.waitForURL('**/patient', { timeout: 8000 });
   await page.waitForTimeout(1000);

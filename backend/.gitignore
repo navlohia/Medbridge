@@ -1,7 +1,9 @@
 node_modules/
 .env
-medbridge.db
-medbridge.db-wal
-medbridge.db-shm
+# Glob, not the literal filename: backups and stray copies of the clinical
+# database were otherwise un-ignored and one `git add .` from being committed.
+*.db
+*.db-wal
+*.db-shm
 dist/
 *.log

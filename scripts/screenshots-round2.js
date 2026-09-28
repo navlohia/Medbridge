@@ -11,15 +11,24 @@ const BASE = 'http://localhost:5173';
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const shot = (n) => page.screenshot({ path: path.join(DIR, n) });
 
-  await page.goto(BASE + '/login', { waitUntil: 'networkidle' });
-  await page.evaluate(() => localStorage.clear());
-  await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
+  await page.goto(BASE + '/auth/patient', { waitUntil: 'networkidle' });
+  await page.evaluate(() => { sessionStorage.clear(); localStorage.clear(); });
+  await page.goto(BASE + '/auth/patient', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(700);
   await shot('R2_01_login.png');
 
+  const loginAs = async (email) => {
+    const role = email.startsWith('admin') ? 'admin' : email.startsWith('patient') ? 'patient' : 'doctor';
+    await page.goto(`${BASE}/auth/${role}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(400);
+    await page.locator('input[type=email]').fill(email);
+    await page.locator('input[type=password]').fill('demo1234');
+    await page.locator('button[type=submit]').click();
+    await page.waitForTimeout(1400);
+  };
+
   // ---- Admin ----
-  await page.locator('button', { hasText: 'Admin' }).first().click();
-  await page.locator('button[type=submit]').click();
+  await loginAs('admin@medbridge.com');
   await page.waitForURL('**/admin', { timeout: 10000 });
   await page.waitForTimeout(1200);
   await shot('R2_02_admin_overview.png');
@@ -34,7 +43,9 @@ const BASE = 'http://localhost:5173';
   await shot('R2_05_admin_appointments.png');
 
   // ---- Doctor ----
-  await page.locator('button[title*="Dr. Evelyn Reed"]').click();
+  await page.locator('button[aria-label="Sign Out"]').click();
+  await page.waitForTimeout(800);
+  await loginAs('doctor@medbridge.com');
   await page.waitForTimeout(1800);
   await shot('R2_06_doctor_dashboard.png');
   await page.locator('button:has-text("Symptom Journal")').click();
@@ -45,7 +56,9 @@ const BASE = 'http://localhost:5173';
   await shot('R2_08_doctor_appointments_tab.png');
 
   // ---- Patient ----
-  await page.locator('button[title*="Marcus Vance"]').click();
+  await page.locator('button[aria-label="Sign Out"]').click();
+  await page.waitForTimeout(800);
+  await loginAs('patient1@medbridge.com');
   await page.waitForTimeout(1800);
   await shot('R2_09_patient_overview.png');
   await page.locator('button', { hasText: 'Appointments' }).first().click();

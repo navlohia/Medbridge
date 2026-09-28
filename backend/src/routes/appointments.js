@@ -3,6 +3,7 @@ const router = express.Router();
 const { db } = require('../db/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
 const { getDaySlots, validateSlot, localDateStr } = require('../utils/scheduling');
+const { emit, adminIds } = require('../utils/events');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -199,9 +200,78 @@ router.post('/', authenticateToken, requireRole('patient'), (req, res) => {
       message: 'Appointment requested. Your doctor will confirm shortly.',
       appointment: created
     });
+
+    // P26: appointment.requested → that doctor, admins, the patient's OTHER tabs
+    // (same user id — their other connections get it; this tab refetches anyway).
+    emit({
+      type: 'appointment.requested',
+      ids: [doctor_id, patientId, ...adminIds()],
+      actor_name: req.user.name,
+      summary: `${req.user.name} requested an appointment with Dr. ${doctor.name.replace(/^Dr\.?\s*/i, '')}`,
+      appointment_id: appointmentId,
+      doctor_id,
+      patient_id: patientId,
+      date: appointment_date,
+      time: appointment_time
+    });
   } catch (error) {
     console.error('Error creating appointment request:', error);
     res.status(500).json({ error: 'Failed to create appointment request' });
+  }
+});
+
+/**
+ * PATCH /appointments/:id/cancel — P21: a patient cancels their OWN
+ * requested/confirmed appointment (no way to cancel existed before). A row
+ * with an open reschedule proposal must be answered via respond-reschedule
+ * instead (accept/decline), so 'reschedule_proposed' is rejected here.
+ */
+router.patch('/:id/cancel', authenticateToken, requireRole('patient'), (req, res) => {
+  try {
+    const appointment = db.prepare('SELECT * FROM appointments WHERE id = ?').get(req.params.id);
+    if (!appointment) return res.status(404).json({ error: 'Appointment not found' });
+
+    if (appointment.patient_id !== req.user.id) {
+      return res.status(403).json({ error: 'You can only cancel your own appointments' });
+    }
+
+    if (!['requested', 'confirmed'].includes(appointment.status)) {
+      return res.status(409).json({
+        error: appointment.status === 'reschedule_proposed'
+          ? 'A reschedule proposal is open — accept or decline it instead'
+          : `This appointment is already ${appointment.status}`
+      });
+    }
+
+    db.prepare(`
+      UPDATE appointments
+      SET status = 'cancelled', proposed_date = NULL, proposed_time = NULL, proposed_reason = NULL
+      WHERE id = ?
+    `).run(appointment.id);
+
+    const updated = db.prepare(`
+      SELECT a.id, a.patient_id, a.doctor_id, a.appointment_date, a.appointment_time,
+             a.reason, a.status, doc.name AS doctor_name
+      FROM appointments a JOIN users doc ON a.doctor_id = doc.id
+      WHERE a.id = ?
+    `).get(appointment.id);
+
+    res.json({ message: 'Appointment cancelled — the time slot has been released.', appointment: updated });
+
+    // P26: patient-initiated cancellation.
+    emit({
+      type: 'appointment.updated',
+      ids: [updated.doctor_id, updated.patient_id, ...adminIds()],
+      actor_name: req.user.name,
+      summary: `${req.user.name} cancelled their appointment`,
+      appointment_id: appointment.id,
+      doctor_id: updated.doctor_id,
+      patient_id: updated.patient_id,
+      status: 'cancelled'
+    });
+  } catch (error) {
+    console.error('Error cancelling appointment:', error);
+    res.status(500).json({ error: 'Failed to cancel appointment' });
   }
 });
 
@@ -228,7 +298,14 @@ router.patch('/:id/status', authenticateToken, requireRole('doctor'), (req, res)
       return res.status(403).json({ error: 'You can only manage appointment requests addressed to you' });
     }
 
-    if (appointment.status !== 'requested' && appointment.status !== 'reschedule_proposed') {
+    // A doctor must always be able to withdraw an appointment addressed to them,
+    // including one that is already 'confirmed'. Without this, a follow-up created
+    // by POST /visits permanently burned a real slot with no release path at all —
+    // the patient could cancel, but the doctor could not. Confirming stays limited
+    // to rows still awaiting the doctor's answer.
+    const canCancel = ['requested', 'reschedule_proposed', 'confirmed'].includes(appointment.status);
+    const canConfirm = appointment.status === 'requested';
+    if (status === 'cancelled' ? !canCancel : !canConfirm) {
       return res.status(409).json({
         error: `This request has already been ${appointment.status} and can no longer be changed`
       });
@@ -252,6 +329,20 @@ router.patch('/:id/status', authenticateToken, requireRole('doctor'), (req, res)
     `).get(appointmentId);
 
     res.json({ message: `Appointment ${status}`, appointment: updated });
+
+    // P26: appointment.updated → doctor + patient + admins
+    emit({
+      type: 'appointment.updated',
+      ids: [updated.doctor_id, updated.patient_id, ...adminIds()],
+      actor_name: req.user.name,
+      summary: status === 'confirmed'
+        ? `Dr. ${req.user.name.replace(/^Dr\.?\s*/i, '')} confirmed ${updated.patient_name}'s appointment`
+        : `Dr. ${req.user.name.replace(/^Dr\.?\s*/i, '')} declined ${updated.patient_name}'s appointment request`,
+      appointment_id: appointmentId,
+      doctor_id: updated.doctor_id,
+      patient_id: updated.patient_id,
+      status
+    });
   } catch (error) {
     console.error('Error updating appointment status:', error);
     res.status(500).json({ error: 'Failed to update appointment status' });
@@ -322,6 +413,18 @@ router.patch('/:id/propose-reschedule', authenticateToken, requireRole('doctor')
       message: 'Reschedule proposed — the patient will see both times and can accept or decline.',
       appointment: updated
     });
+
+    // P26: a reschedule proposal also updates the appointment row.
+    emit({
+      type: 'appointment.updated',
+      ids: [updated.doctor_id, updated.patient_id, ...adminIds()],
+      actor_name: req.user.name,
+      summary: `Dr. ${req.user.name.replace(/^Dr\.?\s*/i, '')} proposed a new time to ${updated.patient_name}`,
+      appointment_id: appointment.id,
+      doctor_id: updated.doctor_id,
+      patient_id: updated.patient_id,
+      status: 'reschedule_proposed'
+    });
   } catch (error) {
     console.error('Error proposing reschedule:', error);
     res.status(500).json({ error: 'Failed to propose reschedule' });
@@ -387,6 +490,20 @@ router.patch('/:id/respond-reschedule', authenticateToken, requireRole('patient'
         ? 'Reschedule accepted — your appointment is confirmed at the new time.'
         : 'Reschedule declined — the appointment is cancelled and the original time released.',
       appointment: updated
+    });
+
+    // P26: patient accept/decline of a proposal.
+    emit({
+      type: 'appointment.updated',
+      ids: [updated.doctor_id, updated.patient_id, ...adminIds()],
+      actor_name: req.user.name,
+      summary: accept
+        ? `${req.user.name} accepted the proposed time`
+        : `${req.user.name} declined the proposed time`,
+      appointment_id: appointment.id,
+      doctor_id: updated.doctor_id,
+      patient_id: updated.patient_id,
+      status: updated.status
     });
   } catch (error) {
     console.error('Error responding to reschedule:', error);

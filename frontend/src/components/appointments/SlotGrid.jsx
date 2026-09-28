@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AlertCircle, Clock, RefreshCw, Sunrise, Sun, Inbox } from 'lucide-react';
 import { api } from '../../api/client';
 import Button from '../common/Button';
+import { useAnyRealtimeEvent } from '../../realtime/RealtimeProvider';
 
 /**
  * Shared live availability grid (Round 2 Block XI, Phases 140–142, 147).
@@ -14,17 +15,17 @@ export default function SlotGrid({ doctorId, date, selectedTime, onSelect, refre
   const [error, setError] = useState(null);
   const [hasHours, setHasHours] = useState(true);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const res = await api.getAvailability(doctorId, date);
       setSlots(res.slots || []);
       setHasHours(res.has_hours !== false);
     } catch (err) {
-      setError(err.message || 'Could not load availability.');
+      if (!silent) setError(err.message || 'Could not load availability.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -32,6 +33,19 @@ export default function SlotGrid({ doctorId, date, selectedTime, onSelect, refre
     if (doctorId && date) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doctorId, date, refreshKey]);
+
+  // P32: the "updates live" claim is now true — appointment events for THIS
+  // doctor silently refresh the grid (no skeleton; old slots stay until the
+  // new availability lands). Slot just taken elsewhere flips to "Booked".
+  useAnyRealtimeEvent((ev) => {
+    if (
+      (ev.type === 'appointment.requested' || ev.type === 'appointment.updated') &&
+      ev.doctor_id === doctorId &&
+      doctorId && date
+    ) {
+      load(true);
+    }
+  });
 
   const formatTime12 = (hhmm) => {
     const [h, m] = hhmm.split(':').map(Number);
@@ -57,7 +71,7 @@ export default function SlotGrid({ doctorId, date, selectedTime, onSelect, refre
       <div className="text-center py-6 space-y-3">
         <AlertCircle className="w-6 h-6 text-danger mx-auto" />
         <p className="text-xs text-primary-500 max-w-xs mx-auto">{error}</p>
-        <Button variant="secondary" size="sm" onClick={load}>
+        <Button variant="secondary" size="sm" onClick={() => load()}>
           <RefreshCw className="w-3.5 h-3.5" />
           <span>Try again</span>
         </Button>
@@ -76,7 +90,6 @@ export default function SlotGrid({ doctorId, date, selectedTime, onSelect, refre
       </div>
     );
   }
-
   const allTaken = slots.every(s => !s.available);
 
   if (allTaken) {

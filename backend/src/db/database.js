@@ -7,7 +7,11 @@ if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
-const dbPath = path.join(dbDir, 'medbridge.db');
+// P22/P42: tests boot an isolated server against a temp DB copy via
+// MEDBRIDGE_DB_PATH. Default (production/dev) behavior is unchanged.
+const dbPath = process.env.MEDBRIDGE_DB_PATH
+  ? path.resolve(process.env.MEDBRIDGE_DB_PATH)
+  : path.join(dbDir, 'medbridge.db');
 const db = new DatabaseSync(dbPath);
 
 // Enable foreign keys and WAL mode for reliability
@@ -176,6 +180,14 @@ function runMigrations() {
   if (!tableColumns('users').includes('is_active')) {
     db.exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;');
     console.log('[DB Migration] Added users.is_active (default 1)');
+  }
+
+  // P39: users.must_change_password — admin/doctor-created accounts (temp
+  // passwords) and self-registrations land here; the client forces a change
+  // before the portal opens. Additive + idempotent; backup taken first.
+  if (!tableColumns('users').includes('must_change_password')) {
+    db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;');
+    console.log('[DB Migration] Added users.must_change_password (default 0)');
   }
 
   // Round 2 Phase 31: account attributes for admin-created patients (nullable;

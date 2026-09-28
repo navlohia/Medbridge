@@ -16,11 +16,13 @@ function check(name, cond, detail = '') {
   const BASE = 'http://localhost:5173';
   const stamp = Date.now().toString().slice(-6);
 
-  await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => localStorage.clear());
-  await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded' });
+  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => { sessionStorage.clear(); localStorage.clear(); });
+  await page.goto(BASE + '/auth/doctor', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(600);
-  await page.locator('button[type=submit]').click(); // doctor pre-filled
+  await page.locator('input[type=email]').fill('doctor@medbridge.com');
+  await page.locator('input[type=password]').fill('demo1234');
+  await page.locator('button[type=submit]').click();
   await page.waitForURL('**/doctor', { timeout: 8000 });
   await page.waitForTimeout(1200);
 

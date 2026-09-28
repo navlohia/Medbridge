@@ -18,10 +18,16 @@ const LAB_REPORT_MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
 const LAB_REPORT_ALLOWED_MIMES = ['image/jpeg', 'image/png'];
 const LAB_REPORT_UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
 
+// P11/P12: sign-up gates (demo values, documented in A2/A3).
+const CLINIC_ACCESS_CODE = process.env.CLINIC_ACCESS_CODE || '';
+const ADMIN_INVITE_CODE = process.env.ADMIN_INVITE_CODE || '';
+
 module.exports = {
   SLOT_DURATION_MINUTES,
   DEFAULT_APPOINTMENT_TIME,
   LAB_REPORT_MAX_IMAGE_BYTES,
   LAB_REPORT_ALLOWED_MIMES,
-  LAB_REPORT_UPLOADS_DIR
+  LAB_REPORT_UPLOADS_DIR,
+  CLINIC_ACCESS_CODE,
+  ADMIN_INVITE_CODE
 };

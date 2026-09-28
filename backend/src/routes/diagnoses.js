@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
+const { authenticateToken } = require('../middleware/auth');
 
-// GET /diagnoses - searchable list
-router.get('/', (req, res) => {
+// GET /diagnoses - searchable list (P19: valid token required)
+router.get('/', authenticateToken, (req, res) => {
   try {
     const q = req.query.q ? req.query.q.trim() : '';
     let diagnoses;

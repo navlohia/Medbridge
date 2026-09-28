@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { usePath, navigate, pathSegment } from '../router';
 import { api } from '../api/client';
+import useRealtimeRefetch from '../hooks/useRealtimeRefetch';
+import useReconnectRefetch from '../hooks/useReconnectRefetch';
+import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/common/Navbar';
 import Modal from '../components/common/Modal';
 import Button from '../components/common/Button';
@@ -167,7 +170,7 @@ function AddDoctorModal({ isOpen, onClose, onCreated }) {
             </div>
           ))}
           <p className="text-xs text-primary-400">
-            A temporary password is generated automatically — there is no self-signup in MedBridge.
+            A temporary password is generated automatically. Patients can also self-register, and doctors sign up with the clinic access code.
           </p>
         </div>
       )}
@@ -409,6 +412,7 @@ export default function AdminDashboardPage() {
   const tab = TABS.includes(segment) ? segment : 'overview';
 
   const [toast, setToast] = useState(null);
+  const adminNameRef = useRef(null); // actor-name echo suppression (P30)
   const [stats, setStats] = useState(null);
   const [statsError, setStatsError] = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -493,6 +497,30 @@ export default function AdminDashboardPage() {
       setAppointmentsLoading(false);
     }
   }, [apptStatusFilter, apptDateFilter]);
+
+  // P29–P31: realtime refetch + toasts + reconnect sweep + 30s poll.
+  // (Placed AFTER the useCallback loaders — closures reference them.)
+  const lastEventAtRef = useRef(Date.now());
+  const { logout: adminLogout } = useAuth();
+  useRealtimeRefetch({
+    'appointment.requested': (ev) => { lastEventAtRef.current = Date.now(); loadStats(); loadAppointments(); if (ev?.actor_name !== adminNameRef.current) showToast(ev.summary, 'info'); },
+    'appointment.updated': (ev) => { lastEventAtRef.current = Date.now(); loadStats(); loadAppointments(); if (ev?.actor_name !== adminNameRef.current) showToast(ev.summary, 'info'); },
+    'account.created': (ev) => { lastEventAtRef.current = Date.now(); loadStats(); loadDoctors(); loadPatients(); if (ev?.actor_name !== adminNameRef.current) showToast(ev.summary, 'info'); },
+    'account.status_changed': (ev) => { lastEventAtRef.current = Date.now(); loadStats(); loadDoctors(); loadPatients(); if (ev?.actor_name !== adminNameRef.current) showToast(ev.summary, 'info'); },
+    'session.revoked': (ev) => {
+      adminLogout();
+      sessionStorage.setItem('medbridge_auth_notice', ev.summary || 'Your session has been revoked.');
+    }
+  });
+  useReconnectRefetch([loadStats, loadDoctors, loadPatients, loadAppointments]);
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (Date.now() - lastEventAtRef.current < 31000) return;
+      loadStats();
+      loadAppointments();
+    }, 30000);
+    return () => clearInterval(id);
+  }, [loadStats, loadAppointments]);
 
   useEffect(() => { loadStats(); }, [loadStats]);
   useEffect(() => {
