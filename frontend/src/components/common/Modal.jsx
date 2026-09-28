@@ -40,15 +40,15 @@ export default function Modal({
         aria-modal="true"
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-surface-border flex items-center justify-between bg-surface-subtle/80 shrink-0">
+        <div className="px-6 py-4 border-b border-surface-border flex items-center justify-between bg-gradient-to-b from-surface-subtle to-surface-card shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             {Icon && (
-              <div className="w-9 h-9 rounded-card bg-clinical-50 border border-clinical-200 flex items-center justify-center text-clinical-600 shrink-0">
+              <div className="w-9 h-9 rounded-card bg-gradient-to-br from-clinical-500 to-clinical-700 flex items-center justify-center text-white shadow-subtle shrink-0">
                 <Icon className="w-5 h-5" />
               </div>
             )}
             <div className="min-w-0">
-              <h3 className="font-heading font-bold text-base text-primary-900 leading-tight truncate">
+              <h3 className="font-heading font-bold text-base text-primary-900 leading-tight tracking-tight truncate">
                 {title}
               </h3>
               {subtitle && (
@@ -58,7 +58,7 @@ export default function Modal({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-primary-400 hover:text-primary-800 hover:bg-surface-subtle rounded-button transition-med shrink-0"
+            className="p-1.5 text-primary-400 hover:text-primary-800 hover:bg-surface-subtle rounded-full transition-med shrink-0 cursor-pointer"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -70,7 +70,7 @@ export default function Modal({
 
         {/* Footer */}
         {footer && (
-          <div className="px-6 py-3.5 border-t border-surface-border bg-surface-subtle/80 shrink-0">
+          <div className="px-6 py-3.5 border-t border-surface-border bg-gradient-to-b from-surface-card to-surface-subtle/80 shrink-0">
             {footer}
           </div>
         )}

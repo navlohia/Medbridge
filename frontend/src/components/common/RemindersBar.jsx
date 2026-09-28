@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, FlaskConical, Pill, X, ChevronRight } from 'lucide-react';
+import { Calendar, FlaskConical, Pill, FileScan, X, ChevronRight } from 'lucide-react';
 
 const SEEN_MEDS_KEY = 'medbridge_seen_meds';
 
@@ -42,9 +42,11 @@ export default function RemindersBar({
   nextAppointment = null,
   pendingLabs = [],
   unseenMedsCount = 0,
+  pendingLabReports = 0,
   onBookAppointment = null,
   onLogLabResult = null,
-  onOpenMedicines = null
+  onOpenMedicines = null,
+  onOpenLabReports = null
 }) {
   const [dismissed, setDismissed] = React.useState(() => {
     try {
@@ -117,6 +119,18 @@ export default function RemindersBar({
     });
   }
 
+  // 4. Uploaded lab reports still awaiting review (Round 2 Phase 193)
+  if (pendingLabReports > 0) {
+    reminders.push({
+      key: 'lab_reports',
+      icon: FileScan,
+      tone: 'clinical',
+      title: `${pendingLabReports} report upload${pendingLabReports > 1 ? 's' : ''} awaiting your review`,
+      body: 'The values are not saved to your record until you review and confirm them.',
+      action: onOpenLabReports ? { label: 'Review', onClick: onOpenLabReports } : null
+    });
+  }
+
   const visible = reminders.filter(r => !dismissed.has(r.key));
   if (visible.length === 0) return null;
 
@@ -139,17 +153,21 @@ export default function RemindersBar({
             className={`flex-1 min-w-0 flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-card border animate-fadeIn ${toneStyles[r.tone]}`}
           >
             <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              <Icon className={`w-4 h-4 shrink-0 ${r.tone === 'warning' ? 'text-warning' : 'text-clinical-700'}`} />
+              <div className={`w-7 h-7 rounded-card border flex items-center justify-center shrink-0 ${
+                r.tone === 'warning' ? 'bg-white border-warning-border' : 'bg-clinical-100 border-clinical-200'
+              }`}>
+                <Icon className={`w-3.5 h-3.5 ${r.tone === 'warning' ? 'text-warning' : 'text-clinical-700'}`} />
+              </div>
               <div className="min-w-0">
                 <div className="text-xs font-bold leading-tight truncate">{r.title}</div>
-                <div className="text-[11px] opacity-75 truncate">{r.body}</div>
+                <div className="text-xs opacity-75 truncate">{r.body}</div>
               </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
               {r.action && (
                 <button
                   onClick={r.action.onClick}
-                  className="text-[11px] font-bold inline-flex items-center gap-0.5 hover:underline cursor-pointer whitespace-nowrap"
+                  className="text-xs font-bold inline-flex items-center gap-0.5 hover:underline cursor-pointer whitespace-nowrap"
                 >
                   {r.action.label}
                   <ChevronRight className="w-3 h-3" />

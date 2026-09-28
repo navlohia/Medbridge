@@ -5,7 +5,8 @@ import React from 'react';
  * Renders <button> by default; pass `as`="a" or spread props for links.
  */
 const VARIANTS = {
-  primary: 'bg-clinical-600 hover:bg-clinical-700 text-white shadow-subtle',
+  primary:
+    'bg-gradient-to-b from-clinical-500 to-clinical-600 hover:from-clinical-400 hover:to-clinical-700 text-white shadow-subtle hover:shadow-glow-teal btn-lift',
   secondary:
     'bg-white border border-surface-border text-primary-800 hover:bg-surface-subtle',
   ghost: 'text-primary-600 hover:text-primary-900 hover:bg-surface-subtle',

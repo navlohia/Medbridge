@@ -15,10 +15,12 @@ import Badge from '../common/Badge';
 import { SkeletonChart } from '../common/Skeleton';
 
 const STANDARD_VITALS = [
+  { label: 'Weight', unit: 'kg' },
   { label: 'Fasting Blood Sugar', unit: 'mg/dL' },
   { label: 'Systolic BP', unit: 'mmHg' },
   { label: 'Diastolic BP', unit: 'mmHg' },
-  { label: 'Body Temperature', unit: '°F' }
+  { label: 'Body Temperature', unit: '°F' },
+  { label: 'Heart Rate', unit: 'bpm' }
 ];
 
 function formatDate(isoStr) {
@@ -37,7 +39,7 @@ function formatDate(isoStr) {
 }
 
 export default function VitalsChart({ patientId, onOpenLogVital, refreshTrigger }) {
-  const [selectedVital, setSelectedVital] = useState('Fasting Blood Sugar');
+  const [selectedVital, setSelectedVital] = useState('Weight');
   const [chartData, setChartData] = useState([]);
   const [reference, setReference] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -87,18 +89,9 @@ export default function VitalsChart({ patientId, onOpenLogVital, refreshTrigger 
     };
   }, [patientId, selectedVital, refreshTrigger]);
 
-  // Metric options: logged vitals first (union of labels), then standard options
-  const vitalOptions = useMemo(() => {
-    const seen = new Set();
-    const options = [];
-    for (const opt of STANDARD_VITALS) {
-      if (!seen.has(opt.label)) {
-        seen.add(opt.label);
-        options.push(opt);
-      }
-    }
-    return options;
-  }, []);
+  // Metric options: the standard home metrics (catalog extras like HbA1c are
+  // loggable but trend as raw lines without a reference band)
+  const vitalOptions = useMemo(() => STANDARD_VITALS, []);
 
   const latestPoint = chartData[chartData.length - 1];
   const prevPoint = chartData.length > 1 ? chartData[chartData.length - 2] : null;
@@ -146,7 +139,7 @@ export default function VitalsChart({ patientId, onOpenLogVital, refreshTrigger 
             {data.value} <span className="text-xs font-normal text-primary-600">{data.unit}</span>
           </div>
           {reference && (
-            <div className="mt-1.5 pt-1.5 border-t border-surface-border flex items-center justify-between gap-3 text-[11px]">
+            <div className="mt-1.5 pt-1.5 border-t border-surface-border flex items-center justify-between gap-3 text-xs">
               <span className="text-primary-500">Target Range:</span>
               <span className="font-mono text-primary-700">
                 {reference.normal_low}–{reference.normal_high} {reference.unit}
@@ -299,7 +292,7 @@ export default function VitalsChart({ patientId, onOpenLogVital, refreshTrigger 
                 <span className="font-medium">{narrative}</span>
               </div>
               {delta !== 0 && (
-                <span className="text-[11px] font-semibold flex items-center gap-1 shrink-0">
+                <span className="text-xs font-semibold flex items-center gap-1 shrink-0">
                   {delta < 0 ? (
                     <TrendingDown className="w-3.5 h-3.5 text-success" />
                   ) : (

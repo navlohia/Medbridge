@@ -11,7 +11,7 @@ export default function Toast({ type = 'success', message, onDismiss }) {
 
   return (
     <div
-      className={`mb-4 p-3.5 rounded-card border text-xs font-semibold flex items-center justify-between animate-fadeIn shadow-subtle ${
+      className={`mb-4 p-3.5 rounded-card border text-xs font-semibold flex items-center justify-between animate-fadeIn shadow-card ${
         isSuccess
           ? 'bg-success-bg border-success-border text-success-text'
           : 'bg-warning-bg border-warning-border text-warning-text'

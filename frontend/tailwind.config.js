@@ -69,7 +69,9 @@ export default {
         'subtle': '0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.03)',
         'card': '0 2px 6px -1px rgba(15, 23, 42, 0.06), 0 1px 4px -2px rgba(15, 23, 42, 0.04)',
         'modal': '0 20px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.08)',
-        'glow-teal': '0 0 16px -2px rgba(20, 184, 166, 0.25)'
+        'glow-teal': '0 0 16px -2px rgba(20, 184, 166, 0.25)',
+        'glow-teal-lg': '0 0 32px -6px rgba(20, 184, 166, 0.45)',
+        'glow-danger': '0 0 16px -4px rgba(185, 28, 28, 0.35)'
       },
       borderRadius: {
         'card': '0.625rem', // 10px consistent radius
@@ -79,10 +81,25 @@ export default {
         fadeIn: {
           '0%': { opacity: '0', transform: 'translateY(4px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' }
+        },
+        slideUp: {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' }
+        },
+        pulseSoft: {
+          '0%, 100%': { transform: 'scale(1)', opacity: '1' },
+          '50%': { transform: 'scale(1.18)', opacity: '0.75' }
+        },
+        drawPulse: {
+          '0%': { strokeDashoffset: '320' },
+          '100%': { strokeDashoffset: '0' }
         }
       },
       animation: {
-        fadeIn: 'fadeIn 200ms cubic-bezier(0.16, 1, 0.3, 1)'
+        fadeIn: 'fadeIn 200ms cubic-bezier(0.16, 1, 0.3, 1)',
+        slideUp: 'slideUp 320ms cubic-bezier(0.16, 1, 0.3, 1) both',
+        pulseSoft: 'pulseSoft 2.2s ease-in-out infinite',
+        drawPulse: 'drawPulse 2.8s ease-in-out infinite'
       }
     },
   },

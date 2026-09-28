@@ -15,7 +15,7 @@ router.get('/', (req, res) => {
         FROM medicines
         WHERE name LIKE ? OR composition LIKE ? OR therapeutic_class LIKE ?
         ORDER BY name ASC
-        LIMIT 100
+        LIMIT 500
       `).all(`%${q}%`, `%${q}%`, `%${q}%`);
     } else {
       medicines = db.prepare(`
@@ -23,7 +23,7 @@ router.get('/', (req, res) => {
                uses_ai_generated, uses_static
         FROM medicines
         ORDER BY name ASC
-        LIMIT 250
+        LIMIT 1000
       `).all();
     }
 

@@ -5,6 +5,13 @@
 @layer base {
   body {
     background-color: #F8FAFC;
+    /* Layered brand canvas: slate base with two faint clinical-teal glows so
+       the page never reads as flat gray. Fixed attachment keeps the tints
+       stable while content scrolls. */
+    background-image:
+      radial-gradient(ellipse 60% 42% at 88% -6%, rgba(13, 148, 136, 0.08), transparent 62%),
+      radial-gradient(ellipse 55% 38% at -8% 104%, rgba(15, 118, 110, 0.055), transparent 65%);
+    background-attachment: fixed;
     color: #0F172A;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
@@ -33,7 +40,60 @@
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
+  background: #14B8A6;
+}
+
+/* Keyboard focus ring — visible, premium, token-colored */
+.focus-ring {
+  outline: none;
+}
+.focus-ring:focus-visible {
+  outline: 2px solid #0D9488;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Numerals read better tabular in stats and readings */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Brand selection color everywhere */
+::selection {
+  background: #CCFBF1;
+  color: #134E4A;
+}
+
+/* Buttons with presence: 1px lift + teal glow on hover */
+.btn-lift {
+  transition:
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-lift:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.btn-lift:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Gradient headline text (brand moments) */
+.text-gradient-clinical {
+  background: linear-gradient(135deg, #0D9488 0%, #0F766E 55%, #134E4A 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Faint architectural grid for dark hero surfaces */
+.hero-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 90% at 70% 10%, black 25%, transparent 72%);
+  mask-image: radial-gradient(ellipse 80% 90% at 70% 10%, black 25%, transparent 72%);
 }
 
 /* Shimmer animation for skeleton loaders */

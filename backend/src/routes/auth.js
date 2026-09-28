@@ -18,6 +18,14 @@ router.post('/login', (req, res) => {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    // Round 2 Phase 36: deactivated accounts cannot sign in. Clinical history is
+    // untouched — this gates access only.
+    if (user.is_active === 0) {
+      return res.status(403).json({
+        error: 'This account has been deactivated by an administrator. Contact your clinic to regain access.'
+      });
+    }
+
     const isMatch = bcrypt.compareSync(password, user.password_hash);
     if (!isMatch) {
       return res.status(401).json({ error: 'Invalid email or password' });

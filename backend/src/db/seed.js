@@ -78,7 +78,11 @@ async function seed() {
   console.log('1. Initializing SQLite tables...');
   // Drop old tables cleanly for a fresh seed
   db.exec(`
+    -- children before parents: all of these reference users/visits
+    DROP TABLE IF EXISTS symptom_comments;
     DROP TABLE IF EXISTS self_logs;
+    DROP TABLE IF EXISTS lab_report_uploads;
+    DROP TABLE IF EXISTS doctor_availability;
     DROP TABLE IF EXISTS appointments;
     DROP TABLE IF EXISTS lab_orders;
     DROP TABLE IF EXISTS prescriptions;
@@ -91,6 +95,7 @@ async function seed() {
   initSchema();
   runMigrations();
   console.log('   Schema successfully created.\n');
+  console.log('   Migrations applied (slot-time + reschedule + availability + lab-report tables).\n');
 
   // Step 2: Read and Print Header Row of both CSVs
   console.log('2. Inspecting CSV Datasets:');
@@ -112,29 +117,60 @@ async function seed() {
     { id: 'lt_5', test_name: 'Hemoglobin (Male)', unit: 'g/dL', normal_low: 13.5, normal_high: 17.5 },
     { id: 'lt_6', test_name: 'Hemoglobin (Female)', unit: 'g/dL', normal_low: 12.0, normal_high: 15.5 },
     { id: 'lt_7', test_name: 'Total Cholesterol', unit: 'mg/dL', normal_low: 125, normal_high: 200 },
-    { id: 'lt_8', test_name: 'WBC Count', unit: '×10⁹/L', normal_low: 4.0, normal_high: 11.0 }
+    { id: 'lt_8', test_name: 'WBC Count', unit: '×10⁹/L', normal_low: 4.0, normal_high: 11.0 },
+    { id: 'lt_9', test_name: 'Weight', unit: 'kg', normal_low: 45.0, normal_high: 90.0 }
   ];
 
+  // Upsert: runMigrations() (called above) may have already ensured Weight
+  // exists; ON CONFLICT keeps both paths idempotent.
   const insertLabTest = db.prepare(`
     INSERT INTO lab_tests (id, test_name, unit, normal_low, normal_high)
     VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(test_name) DO UPDATE SET
+      unit = excluded.unit,
+      normal_low = excluded.normal_low,
+      normal_high = excluded.normal_high
   `);
   for (const lt of labTests) {
     insertLabTest.run(lt.id, lt.test_name, lt.unit, lt.normal_low, lt.normal_high);
   }
   console.log(`   Seeded ${labTests.length} lab tests.\n`);
 
-  // Step 4: Seed Users (1 Doctor, 2 Patients)
-  console.log('4. Seeding Demo Accounts (Doctor + 2 Patients)...');
+  // Step 4: Seed Users (1 Admin, 3 Doctors, 2 Patients)
+  console.log('4. Seeding Demo Accounts (Admin + 3 Doctors + 2 Patients)...');
   const passwordHash = bcrypt.hashSync('demo1234', 10);
 
   const users = [
+    {
+      id: 'admin_1',
+      name: 'Priya Nair',
+      email: 'admin@medbridge.com',
+      role: 'admin',
+      specialization: null,
+      password_hash: passwordHash
+    },
     {
       id: 'doc_1',
       name: 'Dr. Evelyn Reed, MD',
       email: 'doctor@medbridge.com',
       role: 'doctor',
       specialization: 'Internal Medicine & Cardiovascular Care',
+      password_hash: passwordHash
+    },
+    {
+      id: 'doc_2',
+      name: 'Dr. Samuel Okafor',
+      email: 'dr.okafor@medbridge.com',
+      role: 'doctor',
+      specialization: 'Pulmonology & Sleep Medicine',
+      password_hash: passwordHash
+    },
+    {
+      id: 'doc_3',
+      name: 'Dr. Leila Haddad',
+      email: 'dr.haddad@medbridge.com',
+      role: 'doctor',
+      specialization: 'Endocrinology & Diabetes Care',
       password_hash: passwordHash
     },
     {
@@ -156,13 +192,36 @@ async function seed() {
   ];
 
   const insertUser = db.prepare(`
-    INSERT INTO users (id, name, email, role, specialization, password_hash)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO users (id, name, email, role, specialization, password_hash, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
   `);
   for (const u of users) {
     insertUser.run(u.id, u.name, u.email, u.role, u.specialization, u.password_hash);
   }
   console.log(`   Seeded ${users.length} accounts (shared password: demo1234).\n`);
+
+  // Step 4b: Seed default doctor availability (Mon–Fri clinic hours, Sat morning)
+  console.log('4b. Seeding Doctor Availability...');
+  const insertAvailability = db.prepare(`
+    INSERT INTO doctor_availability (id, doctor_id, day_of_week, start_time, end_time)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  const DEFAULT_AVAILABILITY = [
+    // Weekdays 09:00–13:00 and 14:00–17:00; Saturday 09:00–12:00; Sunday off
+    { days: [1, 2, 3, 4, 5], start: '09:00', end: '13:00' },
+    { days: [1, 2, 3, 4, 5], start: '14:00', end: '17:00' },
+    { days: [6], start: '09:00', end: '12:00' }
+  ];
+  const doctorIds = users.filter(u => u.role === 'doctor').map(d => d.id);
+  let availIdx = 1;
+  for (const docId of doctorIds) {
+    for (const block of DEFAULT_AVAILABILITY) {
+      for (const day of block.days) {
+        insertAvailability.run(`avail_${availIdx++}`, docId, day, block.start, block.end);
+      }
+    }
+  }
+  console.log(`   Seeded ${availIdx - 1} availability rows across ${doctorIds.length} doctors (30-min slots, Mon–Sat).\n`);
 
   // Step 5: Parse & Seed Diagnoses from Diaognases.csv
   console.log('5. Processing & Seeding Diagnoses...');
@@ -298,8 +357,35 @@ async function seed() {
     return a.name.localeCompare(b.name);
   });
 
-  // Pick top 200 medicines
-  const selectedMeds = candidateMeds.slice(0, 200);
+  // Diversity-first catalog: letter-balanced round-robin across the whole
+  // alphabet, with priority-keyword medicines sorting first inside every
+  // letter bucket. (A flat slice(0, 200) of the alphabetically-sorted CSV
+  // made the picker show nothing but "A" medicines. The priority keyword
+  // list alone matches 3000+ brands, so it can't be a plain filter head.)
+  const MED_CATALOG_SIZE = 600;
+  const selected = [];
+  const letterBuckets = new Map();
+  for (const med of candidateMeds) {
+    const letter = (med.name[0] || '#').toUpperCase();
+    if (!letterBuckets.has(letter)) letterBuckets.set(letter, []);
+    letterBuckets.get(letter).push(med);
+  }
+  let roundRobin = [...letterBuckets.keys()].sort();
+  let rrIdx = 0;
+  while (selected.length < MED_CATALOG_SIZE && roundRobin.length > 0) {
+    const letter = roundRobin[rrIdx % roundRobin.length];
+    const bucket = letterBuckets.get(letter);
+    const med = bucket.shift();
+    if (med) selected.push(med);
+    if (!med || bucket.length === 0) {
+      roundRobin = roundRobin.filter(l => l !== letter);
+      rrIdx = 0;
+    } else {
+      rrIdx++;
+    }
+  }
+  selected.sort((a, b) => a.name.localeCompare(b.name));
+  const selectedMeds = selected;
 
   // Gemini AI generation at seed time (if GEMINI_API_KEY is configured)
   const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim());
@@ -413,15 +499,17 @@ async function seed() {
     VALUES (?, ?, ?, ?, ?)
   `);
   const insertAppointment = db.prepare(`
-    INSERT INTO appointments (id, patient_id, doctor_id, appointment_date, reason, status)
-    VALUES (?, ?, ?, ?, ?, 'confirmed')
+    INSERT INTO appointments (id, patient_id, doctor_id, appointment_date, appointment_time, reason, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
+  const APPT_DEFAULT_TIME = require('../config').DEFAULT_APPOINTMENT_TIME;
 
-  // Helper date function for historical offsets
+  // Helper date function for historical offsets (local timezone, not UTC —
+  // the demo machine may be ahead of UTC, which would shift "today")
   const getDateOffset = (daysAgo) => {
     const d = new Date();
     d.setDate(d.getDate() - daysAgo);
-    return d.toISOString().split('T')[0];
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
 
   // --- PATIENT 1 (Marcus Vance): Diabetes & Hypertension Progression ---
@@ -468,8 +556,10 @@ async function seed() {
   insertLabOrder.run('lo_5', 'v_pat1_3', 'Fasting Blood Sugar', getDateOffset(-10), 'pending');
   insertLabOrder.run('lo_6', 'v_pat1_3', 'Total Cholesterol', getDateOffset(-10), 'pending');
 
-  // Next scheduled appointment for Patient 1:
-  insertAppointment.run('apt_pat1', 'pat_1', 'doc_1', getDateOffset(-14), 'Follow-up Comprehensive Metabolic Panel & HbA1c review');
+  // Next scheduled appointment for Patient 1 (confirmed, with a real time):
+  insertAppointment.run('apt_pat1', 'pat_1', 'doc_1', getDateOffset(-14), '10:30', 'Follow-up Comprehensive Metabolic Panel & HbA1c review', 'confirmed');
+  // A pending request for the doctor's panel (so the requests inbox has life on day one):
+  insertAppointment.run('apt_pat2_req', 'pat_2', 'doc_1', getDateOffset(-9), '11:00', 'Inhaler technique review before travel', 'requested');
 
   // --- PATIENT 2 (Elena Rostova): Bronchial Asthma & GERD ---
   // Visit 1: 45 days ago
@@ -497,8 +587,8 @@ async function seed() {
   insertPrescription.run('rx_p2_3', 'v_pat2_2', pantoprazoleMed.id, '40mg once daily before breakfast', '30 days');
   insertPrescription.run('rx_p2_4', 'v_pat2_2', budecortMed.id, '200 mcg 2 puffs twice daily', '45 days');
 
-  // Next scheduled appointment for Patient 2:
-  insertAppointment.run('apt_pat2', 'pat_2', 'doc_1', getDateOffset(-18), 'Pulmonary Function & Reflux symptom follow-up');
+  // Confirmed follow-up for Patient 2 with Dr. Okafor (spread across doctors):
+  insertAppointment.run('apt_pat2', 'pat_2', 'doc_2', getDateOffset(-18), '15:00', 'Pulmonary Function & Reflux symptom follow-up', 'confirmed');
   insertLabOrder.run('lo_p2_2', 'v_pat2_2', 'Hemoglobin (Female)', getDateOffset(-7), 'pending');
 
   console.log('   Seeded clinical visits, active prescriptions, lab orders, and appointments.\n');
@@ -506,8 +596,8 @@ async function seed() {
   // Step 8: Seed Vitals and Self-Logs forming a coherent story
   console.log('8. Seeding Coherent Vitals & Symptoms for Demo Patients...');
   const insertSelfLog = db.prepare(`
-    INSERT INTO self_logs (id, patient_id, log_type, label, value, unit, log_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO self_logs (id, patient_id, log_type, label, value, unit, log_date, entry_id, duration, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   // Marcus Vance: Fasting Blood Sugar progression showing clear clinical curve:
@@ -564,6 +654,16 @@ async function seed() {
   // Patient 1 Symptoms logged:
   insertSelfLog.run(`log_${logIdx++}`, 'pat_1', 'symptom', 'Fatigue', '7', '/10', getDateOffset(56));
   insertSelfLog.run(`log_${logIdx++}`, 'pat_1', 'symptom', 'Excessive Thirst', '8', '/10', getDateOffset(35));
+
+  // Marcus Vance (pat_1): a recent grouped journal entry (entry_id) — the showcase
+  // entry the doctor comments on, so guidance threads are visible in the demo world.
+  const showcaseEntryId = `entry_${logIdx}`;
+  const showcaseDate = getDateOffset(2);
+  const showcaseNotes = 'Headache by mid-afternoon both days; skipped my evening walk because of it.';
+  insertSelfLog.run(`log_${logIdx++}`, 'pat_1', 'symptom', 'Fever', '2', '/5', showcaseDate, showcaseEntryId, '2-3 days', showcaseNotes);
+  insertSelfLog.run(`log_${logIdx++}`, 'pat_1', 'symptom', 'Fatigue / Low Energy', '4', '/5', showcaseDate, showcaseEntryId, '2-3 days', showcaseNotes);
+  insertSelfLog.run(`log_${logIdx++}`, 'pat_1', 'vital', 'Body Temperature', '100.4', '°F', showcaseDate, showcaseEntryId, '2-3 days', showcaseNotes);
+
   insertSelfLog.run(`log_${logIdx++}`, 'pat_1', 'symptom', 'Fatigue', '3', '/10', getDateOffset(4));
 
   // Patient 2 (Elena): Systolic BP and Symptoms
@@ -591,6 +691,32 @@ async function seed() {
 
   console.log(`   Seeded ${logIdx - 1} coherent self-logs (vitals & symptoms).\n`);
 
+  // Step 8b: Doctor guidance on the showcase journal entry (symptom_comments)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS symptom_comments (
+      id TEXT PRIMARY KEY,
+      entry_id TEXT NOT NULL,
+      patient_id TEXT NOT NULL,
+      doctor_id TEXT NOT NULL,
+      comment TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(patient_id) REFERENCES users(id),
+      FOREIGN KEY(doctor_id) REFERENCES users(id)
+    );
+  `);
+  db.prepare(`
+    INSERT INTO symptom_comments (id, entry_id, patient_id, doctor_id, comment, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    'sc_1',
+    showcaseEntryId,
+    'pat_1',
+    'doc_1',
+    'Thanks for logging this, Marcus. A low-grade fever with fatigue for two days is most likely viral — keep up the fluids and rest, and take Dolo only if the headache gets bad. If the fever crosses 102°F, lasts beyond 3 days, or you feel breathless, message me and we will bring the visit forward.',
+    new Date(Date.now() - 20 * 3600 * 1000).toISOString()
+  );
+  console.log('   Seeded 1 doctor guidance comment on the showcase journal entry.\n');
+
   // Step 9: Print Verification Summary
   console.log('====================================================');
   console.log('            MEDBRIDGE SEED SUMMARY REPORT           ');
@@ -604,8 +730,9 @@ async function seed() {
   const countLabOrders = db.prepare('SELECT count(*) as count FROM lab_orders').get().count;
   const countAppointments = db.prepare('SELECT count(*) as count FROM appointments').get().count;
   const countSelfLogs = db.prepare('SELECT count(*) as count FROM self_logs').get().count;
+  const countSymptomComments = db.prepare('SELECT count(*) as count FROM symptom_comments').get().count;
 
-  console.log(`Users:              ${countUsers} (1 Doctor, 2 Patients)`);
+  console.log(`Users:              ${countUsers} (1 Admin, 3 Doctors, 2 Patients)`);
   console.log(`Medicines:          ${countMedicines} records with therapeutic classes`);
   console.log(`Diagnoses:          ${countDiagnoses} diseases with symptoms & precautions`);
   console.log(`Standard Lab Tests: ${countLabTests} reference ranges`);
@@ -614,6 +741,7 @@ async function seed() {
   console.log(`Lab Orders:         ${countLabOrders} lab orders`);
   console.log(`Appointments:       ${countAppointments} scheduled appointments`);
   console.log(`Self Logs:          ${countSelfLogs} vitals & symptom logs`);
+  console.log(`Doctor Comments:    ${countSymptomComments} guidance notes on journal entries`);
 
   console.log('\n--- SAMPLE MEDICINES WITH PLAIN-LANGUAGE EXPLANATIONS ---');
   const sampleMeds = db.prepare('SELECT name, composition, therapeutic_class, uses_ai_generated, uses_static FROM medicines WHERE uses_ai_generated IS NOT NULL LIMIT 2').all();

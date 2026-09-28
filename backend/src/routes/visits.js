@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { db, transaction } = require('../db/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const { DEFAULT_APPOINTMENT_TIME } = require('../config');
 
 /**
  * Checks for therapeutic class duplication and clinical drug interactions
@@ -158,6 +159,7 @@ router.post('/', authenticateToken, requireRole('doctor'), (req, res) => {
       prescriptions = [],
       lab_orders = [],
       next_appointment_date,
+      next_appointment_time,
       appointment_reason
     } = req.body;
 
@@ -166,7 +168,7 @@ router.post('/', authenticateToken, requireRole('doctor'), (req, res) => {
     }
 
     const doctorId = req.user.id;
-    const visitDate = req.body.visit_date || new Date().toISOString().split('T')[0];
+    const visitDate = req.body.visit_date || require('../utils/scheduling').localDateStr();
     const visitId = `v_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
     // Evaluate conflicts before saving (warn, never block)
@@ -208,17 +210,22 @@ router.post('/', authenticateToken, requireRole('doctor'), (req, res) => {
         );
       }
 
-      // 4. Insert Next Appointment if provided
+      // 4. Insert Next Appointment if provided (optional HH:MM time; schema-consistent default)
       if (next_appointment_date) {
         const aptId = `apt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        let apptTime = next_appointment_time ? String(next_appointment_time).trim() : '';
+        if (apptTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(apptTime)) {
+          apptTime = '';
+        }
         database.prepare(`
-          INSERT INTO appointments (id, patient_id, doctor_id, appointment_date, reason)
-          VALUES (?, ?, ?, ?, ?)
+          INSERT INTO appointments (id, patient_id, doctor_id, appointment_date, appointment_time, reason)
+          VALUES (?, ?, ?, ?, ?, ?)
         `).run(
           aptId,
           patient_id,
           doctorId,
           next_appointment_date,
+          apptTime || DEFAULT_APPOINTMENT_TIME,
           appointment_reason || 'Routine follow-up'
         );
       }

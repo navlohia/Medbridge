@@ -6,3 +6,6 @@ backend/src/db/medbridge.db*
 frontend/dist/
 *.log
 .DS_Store
+
+# Round 2: lab-report photo uploads (image bytes live here, paths in DB)
+backend/uploads/

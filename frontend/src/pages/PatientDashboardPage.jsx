@@ -11,12 +11,15 @@ import MedicineDetailModal from '../components/patient/MedicineDetailModal';
 import VitalLoggerModal from '../components/patient/VitalLoggerModal';
 import SymptomLoggerModal from '../components/patient/SymptomLoggerModal';
 import BookAppointmentModal from '../components/patient/BookAppointmentModal';
+import LabReportUploadModal from '../components/patient/LabReportUploadModal';
+import LabReportHistory from '../components/patient/LabReportHistory';
 import PatientHistoryTimeline from '../components/patient/PatientHistoryTimeline';
 import { SkeletonCard, SkeletonLine } from '../components/common/Skeleton';
 import EmptyState from '../components/common/EmptyState';
 import ErrorState from '../components/common/ErrorState';
 import {
   Calendar,
+  CalendarClock,
   Pill,
   FlaskConical,
   Activity,
@@ -28,14 +31,29 @@ import {
   TrendingUp as TrendsIcon,
   ArrowRight,
   Thermometer,
-  CalendarPlus
+  CalendarPlus,
+  MessageCircle,
+  FileScan,
+  Check,
+  X
 } from 'lucide-react';
+import { vitalIcon, labTestIcon, symptomIcon } from '../utils/iconMap';
 
 const APPOINTMENT_STATUS_META = {
   requested: { label: 'Requested', variant: 'warning' },
   confirmed: { label: 'Confirmed', variant: 'success' },
-  cancelled: { label: 'Cancelled', variant: 'danger' }
+  cancelled: { label: 'Cancelled', variant: 'danger' },
+  reschedule_proposed: { label: 'Reschedule proposed', variant: 'clinical' }
 };
+
+// 12-hour time formatting, consistent across every new surface (Phase 152)
+function formatApptTime(hhmm) {
+  if (!hhmm) return '';
+  const [h, m] = hhmm.split(':').map(Number);
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${suffix}`;
+}
 
 // Severity scale used across the journal: 1–5 (legacy 1–10 rows are mapped)
 const SEVERITY = {
@@ -88,6 +106,7 @@ export default function PatientDashboardPage() {
   const [isVitalModalOpen, setIsVitalModalOpen] = useState(false);
   const [isSymptomModalOpen, setIsSymptomModalOpen] = useState(false);
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [isLabUploadOpen, setIsLabUploadOpen] = useState(false);
   const [myAppointments, setMyAppointments] = useState([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(true);
   const [appointmentsError, setAppointmentsError] = useState(null);
@@ -128,6 +147,20 @@ export default function PatientDashboardPage() {
       setAppointmentsError(err.message || 'Could not load your appointments.');
     } finally {
       setAppointmentsLoading(false);
+    }
+  };
+
+  // Block XI Phases 145–146: patient accept/decline of a doctor's reschedule
+  const [respondBusy, setRespondBusy] = useState(null);
+  const respondToReschedule = async (id, accept) => {
+    setRespondBusy(id);
+    try {
+      const res = await api.respondReschedule(id, accept);
+      triggerRefresh(res.message || (accept ? 'Reschedule accepted.' : 'Reschedule declined.'), 'success');
+    } catch (err) {
+      triggerRefresh(err.message || 'Could not respond to the reschedule.', 'danger');
+    } finally {
+      setRespondBusy(null);
     }
   };
 
@@ -182,6 +215,13 @@ export default function PatientDashboardPage() {
     [historyData]
   );
 
+  // Doctor guidance threads keyed by journal entry
+  const guidanceByEntry = historyData?.symptom_comments_by_entry || {};
+  const guidanceCount = useMemo(
+    () => Object.values(guidanceByEntry).reduce((a, list) => a + list.length, 0),
+    [historyData]
+  );
+
   const apptStatus = nextAppointment?.status || (nextAppointment ? 'confirmed' : null);
   const apptMeta = apptStatus ? APPOINTMENT_STATUS_META[apptStatus] || APPOINTMENT_STATUS_META.confirmed : null;
 
@@ -223,6 +263,18 @@ export default function PatientDashboardPage() {
   }, [seenMedsVersion, activeMedicines]);
   const unseenMedsCount = activeMedicines.filter(m => !seenMeds.has(m.id)).length;
 
+  // Round 2 Phase 193: uploaded reports still pending review surface as a reminder
+  const [pendingReportCount, setPendingReportCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    api.getLabReports()
+      .then(list => {
+        if (!cancelled) setPendingReportCount((list || []).filter(u => u.status === 'pending_review').length);
+      })
+      .catch(() => { /* reminder is best-effort */ });
+    return () => { cancelled = true; };
+  }, [refreshTrigger]);
+
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
   return (
@@ -231,16 +283,19 @@ export default function PatientDashboardPage() {
 
       {/* ============ HERO BANNER ============ */}
       {!loadError && (
-        <div className="bg-gradient-to-br from-primary-900 via-primary-850 to-clinical-900 text-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-clinical-300">
-                  {today}
-                </p>
-                <h1 className="font-heading font-extrabold text-2xl sm:text-3xl mt-1 tracking-tight">
-                  Hello, {user?.name?.split(' ')[0] || 'there'}
-                </h1>
+        <div className="bg-gradient-to-br from-primary-900 via-primary-850 to-clinical-900 text-white relative overflow-hidden">
+          {/* brand texture: grid + teal glow accent */}
+          <div className="hero-grid absolute inset-0 pointer-events-none" />
+          <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(60%_85%_at_82%_0%,rgba(94,234,212,0.13),transparent_62%)]" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative">
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-clinical-300">
+                {today}
+              </p>
+              <h1 className="font-heading font-extrabold text-2xl sm:text-3xl mt-1 tracking-tight">
+                Hello, {user?.name?.split(' ')[0] || 'there'}
+              </h1>
                 <p className="text-sm text-primary-200 mt-1 max-w-lg">
                   {daysToAppt !== null && daysToAppt <= 7 ? (
                     <>Your next visit is <span className="font-bold text-white">{daysToAppt === 0 ? 'today' : daysToAppt === 1 ? 'tomorrow' : `in ${daysToAppt} days`}</span> with {nextAppointment.doctor_name}.</>
@@ -256,9 +311,9 @@ export default function PatientDashboardPage() {
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   onClick={() => setIsSymptomModalOpen(true)}
-                  className="inline-flex items-center gap-2 px-5 py-3 rounded-button bg-clinical-500 hover:bg-clinical-400 text-primary-950 font-heading font-bold text-sm shadow-modal transition-med cursor-pointer"
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded-button bg-clinical-500 hover:bg-clinical-400 text-primary-950 font-heading font-bold text-sm shadow-modal hover:shadow-glow-teal-lg transition-med cursor-pointer"
                 >
-                  <HeartPulse className="w-4.5 h-4.5" strokeWidth={2.4} />
+                  <HeartPulse className="w-4 h-4" strokeWidth={2.4} />
                   <span>Log how you feel</span>
                 </button>
                 <button
@@ -274,28 +329,35 @@ export default function PatientDashboardPage() {
             {/* Inline stat strip — no boxes, just numbers */}
             <div className="mt-7 grid grid-cols-2 sm:grid-cols-4 gap-y-4">
               {[
-                { label: 'Active medicines', value: activeMedicines.length, tab: 'overview' },
-                { label: 'Pending labs', value: pendingLabs.length, tab: 'overview' },
-                { label: 'Journal entries', value: symptomEntries.length, tab: 'symptoms' },
+                { label: 'Active medicines', value: activeMedicines.length, tab: 'overview', icon: Pill },
+                { label: 'Pending labs', value: pendingLabs.length, tab: 'overview', icon: FlaskConical },
+                { label: 'Journal entries', value: symptomEntries.length, tab: 'symptoms', icon: HeartPulse },
                 {
                   label: 'Next appointment',
                   value: nextAppointment ? (daysToAppt === null ? '—' : daysToAppt === 0 ? 'Today' : `${daysToAppt}d`) : 'None',
-                  tab: 'appointments'
+                  tab: 'appointments',
+                  icon: Calendar
                 }
-              ].map(stat => (
-                <button
-                  key={stat.label}
-                  onClick={() => setActiveTab(stat.tab)}
-                  className="text-left group cursor-pointer"
-                >
-                  <div className="font-heading font-extrabold text-2xl sm:text-3xl text-white group-hover:text-clinical-300 transition-med">
-                    {stat.value}
-                  </div>
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-primary-300 mt-0.5">
-                    {stat.label}
-                  </div>
-                </button>
-              ))}
+              ].map(stat => {
+                const Icon = stat.icon;
+                return (
+                  <button
+                    key={stat.label}
+                    onClick={() => setActiveTab(stat.tab)}
+                    className="text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Icon className="w-3.5 h-3.5 text-clinical-300 shrink-0" />
+                      <span className="text-xs font-semibold uppercase tracking-wider text-primary-300">
+                        {stat.label}
+                      </span>
+                    </div>
+                    <div className="font-heading font-extrabold text-2xl sm:text-3xl text-white group-hover:text-clinical-300 transition-med tnum mt-0.5">
+                      {stat.value}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -322,15 +384,17 @@ export default function PatientDashboardPage() {
             nextAppointment={nextAppointment}
             pendingLabs={pendingLabs}
             unseenMedsCount={unseenMedsCount}
+            pendingLabReports={pendingReportCount}
             onLogLabResult={() => setIsVitalModalOpen(true)}
             onOpenMedicines={() => setActiveTab('overview')}
+            onOpenLabReports={() => setIsLabUploadOpen(true)}
           />
         )}
 
         {/* ============ SEGMENTED TAB BAR ============ */}
         {!loadError && (
           <div className="sticky top-16 z-20 -mx-4 px-4 sm:mx-0 sm:px-0 py-1 bg-surface-base/90 backdrop-blur-sm">
-            <div className="inline-flex items-center gap-1 bg-primary-100/70 border border-primary-200/60 rounded-full p-1 overflow-x-auto max-w-full">
+            <div className="inline-flex items-center gap-1 bg-primary-100/70 border border-primary-200/60 rounded-full p-1 shadow-subtle overflow-x-auto max-w-full">
               {TABS.map(tab => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -347,11 +411,11 @@ export default function PatientDashboardPage() {
                         : 'text-primary-500 hover:text-primary-900'
                     }`}
                   >
-                    <Icon className={`w-3.5 h-3.5 ${isActive ? (isSymptoms ? 'text-white' : 'text-clinical-600') : 'text-primary-400'}`} />
+                    <Icon className={`w-4 h-4 ${isActive ? (isSymptoms ? 'text-white' : 'text-clinical-600') : 'text-primary-400'}`} />
                     <span>{tab.label}</span>
                     {isSymptoms && symptomEntries.length > 0 && (
-                      <span className={`ml-0.5 text-[10px] font-bold px-1.5 py-px rounded-full ${
-                        isActive ? 'bg-white/25 text-white' : 'bg-clinical-100 text-clinical-800'
+                      <span className={`ml-0.5 text-[10px] font-bold px-1.5 py-px rounded-full tnum ${
+                        isActive ? 'bg-white/25 text-white' : 'bg-clinical-100 text-clinical-800 animate-pulseSoft'
                       }`}>
                         {symptomEntries.length}
                       </span>
@@ -406,7 +470,7 @@ export default function PatientDashboardPage() {
                   </div>
                 )}
 
-                {/* Pending labs — flat rows, no nested boxes */}
+                {/* Pending labs — flat rows, no nested boxes; upload entry point (Phase 161) */}
                 {pendingLabs.length > 0 && (
                   <div className="bg-surface-card rounded-card p-5 shadow-subtle border-l-4 border-warning">
                     <div className="flex items-center justify-between mb-3">
@@ -414,22 +478,42 @@ export default function PatientDashboardPage() {
                         <FlaskConical className="w-4 h-4 text-warning" />
                         Waiting on results ({pendingLabs.length})
                       </h3>
+                      <Button variant="primary" size="sm" onClick={() => setIsLabUploadOpen(true)}>
+                        <FileScan className="w-3.5 h-3.5" />
+                        <span>Upload report photo</span>
+                      </Button>
                     </div>
                     <div className="divide-y divide-surface-subtle">
-                      {pendingLabs.map(lo => (
-                        <div key={lo.id} className="flex items-center justify-between gap-3 py-2.5">
-                          <div className="min-w-0">
-                            <span className="text-sm font-semibold text-primary-900">{lo.test_name}</span>
-                            <span className="text-xs text-primary-400 block">Due {lo.scheduled_date}</span>
+                      {pendingLabs.map(lo => {
+                        const LabIcon = labTestIcon(lo.test_name);
+                        return (
+                          <div key={lo.id} className="flex items-center justify-between gap-3 py-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-8 h-8 rounded-card bg-warning-bg border border-warning-border flex items-center justify-center shrink-0">
+                                <LabIcon className="w-4 h-4 text-warning" />
+                              </div>
+                              <div className="min-w-0">
+                                <span className="text-sm font-bold text-primary-900">{lo.test_name}</span>
+                                <span className="text-xs text-primary-400 block">Due {lo.scheduled_date}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button variant="ghost" size="sm" onClick={() => setIsLabUploadOpen(true)}>
+                                Upload photo
+                              </Button>
+                              <Button variant="secondary" size="sm" onClick={() => setIsVitalModalOpen(true)}>
+                                Log result
+                              </Button>
+                            </div>
                           </div>
-                          <Button variant="secondary" size="sm" onClick={() => setIsVitalModalOpen(true)}>
-                            Log result
-                          </Button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
+
+                {/* Upload history — appears once the first upload exists (Phase 168) */}
+                <LabReportHistory refreshKey={refreshTrigger} />
 
                 {/* Active medicines — clean list, no card-in-card */}
                 <div className="bg-surface-card rounded-card p-5 shadow-subtle">
@@ -438,7 +522,7 @@ export default function PatientDashboardPage() {
                       <Pill className="w-4 h-4 text-clinical-600" />
                       Your medicines ({activeMedicines.length})
                     </h3>
-                    <span className="text-[11px] font-medium text-primary-400">Tap any for a plain-language guide</span>
+                    <span className="text-xs font-medium text-primary-400">Tap any for a plain-language guide</span>
                   </div>
 
                   {activeMedicines.length === 0 ? (
@@ -456,10 +540,10 @@ export default function PatientDashboardPage() {
                             markMedSeen(med.id);
                             setSelectedMedicine(med);
                           }}
-                          className="w-full flex items-center gap-4 py-3.5 text-left hover:bg-clinical-50/40 -mx-2 px-2 rounded-button transition-med group cursor-pointer"
+                          className="w-full flex items-center gap-4 py-4 text-left hover:bg-clinical-50/40 -mx-2 px-2 rounded-button transition-med group cursor-pointer"
                         >
-                          <div className="w-10 h-10 rounded-card bg-clinical-50 border border-clinical-200 flex items-center justify-center text-clinical-600 shrink-0">
-                            <Pill className="w-4.5 h-4.5" />
+                          <div className="w-10 h-10 rounded-card bg-clinical-50 border border-clinical-200 flex items-center justify-center text-clinical-600 shrink-0 group-hover:shadow-glow-teal transition-med">
+                            <Pill className="w-4 h-4" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -476,7 +560,7 @@ export default function PatientDashboardPage() {
                               {med.dosage} · {med.duration}
                             </p>
                           </div>
-                          <span className="hidden md:block max-w-[280px] text-[11px] text-primary-400 italic line-clamp-2 shrink-0">
+                          <span className="hidden md:block max-w-[280px] text-xs text-primary-400 italic line-clamp-2 shrink-0">
                             {med.plain_explanation}
                           </span>
                           <ChevronRight className="w-4 h-4 text-primary-300 group-hover:text-clinical-600 group-hover:translate-x-0.5 transition-med shrink-0" />
@@ -520,14 +604,16 @@ export default function PatientDashboardPage() {
                         const status = inRange(v.value, v.normal_low, v.normal_high);
                         const accent =
                           status === 'in' ? 'bg-success' : status === 'low' || status === 'high' ? 'bg-warning' : 'bg-primary-300';
+                        const VIcon = vitalIcon(v.label);
                         return (
                           <div key={v.id} className={`border-l-2 ${accent} pl-3`}>
-                            <div className="text-[10px] font-semibold uppercase tracking-wide text-primary-400 truncate">
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-primary-400 truncate flex items-center gap-1">
+                              <VIcon className="w-3 h-3 shrink-0" />
                               {v.label}
                             </div>
                             <div className="font-heading font-extrabold text-xl text-primary-900 mt-0.5 leading-none">
                               {v.value}
-                              <span className="text-[11px] font-semibold text-primary-400 ml-1">{v.unit || ''}</span>
+                              <span className="text-xs font-semibold text-primary-400 ml-1">{v.unit || ''}</span>
                             </div>
                             <div className="text-[10px] text-primary-400 mt-1">{v.log_date}</div>
                           </div>
@@ -583,20 +669,28 @@ export default function PatientDashboardPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-surface-subtle">
-                      {recentVitals.map(v => (
-                        <tr key={v.id} className="hover:bg-surface-subtle/60 transition-med">
-                          <td className="px-3 py-2.5 font-medium text-primary-900">{v.log_date}</td>
-                          <td className="px-3 py-2.5 font-semibold text-primary-800">{v.label}</td>
-                          <td className="px-3 py-2.5 font-mono font-bold text-primary-900">
-                            {v.value} <span className="font-normal text-primary-400">{v.unit || ''}</span>
-                          </td>
-                          <td className="px-3 py-2.5 text-primary-400 font-mono">
-                            {v.normal_low !== null && v.normal_high !== null
-                              ? `${v.normal_low}–${v.normal_high}`
-                              : '—'}
-                          </td>
-                        </tr>
-                      ))}
+                      {recentVitals.map(v => {
+                        const VIcon = vitalIcon(v.label);
+                        return (
+                          <tr key={v.id} className="hover:bg-surface-subtle/60 transition-med">
+                            <td className="px-3 py-2.5 font-medium text-primary-900">{v.log_date}</td>
+                            <td className="px-3 py-2.5 font-semibold text-primary-800">
+                              <span className="flex items-center gap-1.5">
+                                <VIcon className="w-3.5 h-3.5 text-clinical-600 shrink-0" />
+                                {v.label}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 font-mono font-bold text-primary-900 tnum">
+                              {v.value} <span className="font-normal text-primary-400">{v.unit || ''}</span>
+                            </td>
+                            <td className="px-3 py-2.5 text-primary-400 font-mono tnum">
+                              {v.normal_low !== null && v.normal_high !== null
+                                ? `${v.normal_low}–${v.normal_high}`
+                                : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -608,43 +702,38 @@ export default function PatientDashboardPage() {
         {/* ================= TAB 3: SYMPTOM JOURNAL — flagship ================= */}
         {activeTab === 'symptoms' && (
           <div className="space-y-5">
-            {/* Journal banner */}
-            <div className="bg-gradient-to-r from-clinical-600 to-clinical-800 rounded-card p-6 text-white relative overflow-hidden shadow-card">
-              {/* decorative pulse line */}
-              <svg
-                className="absolute right-0 top-0 h-full w-1/2 opacity-15 pointer-events-none"
-                viewBox="0 0 300 120"
-                fill="none"
-                preserveAspectRatio="none"
-              >
-                <path
-                  d="M0 60 L40 60 L55 25 L75 95 L90 40 L110 60 L150 60 L165 15 L185 100 L200 45 L220 60 L300 60"
-                  stroke="white"
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-
-              <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-clinical-200">
-                    Symptom Journal
-                  </p>
-                  <h2 className="font-heading font-extrabold text-xl sm:text-2xl mt-1 tracking-tight">
-                    How have you been feeling?
-                  </h2>
-                  <p className="text-sm text-clinical-100 mt-1 max-w-md">
-                    Log several symptoms at once, rate each one, and your doctor sees the full picture at your next visit.
+            {/* Journal toolbar — compact command bar (replaced the big banner) */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-surface-card rounded-card border border-surface-border shadow-subtle px-4 py-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-card bg-gradient-to-br from-clinical-500 to-clinical-700 flex items-center justify-center text-white shadow-subtle shrink-0">
+                  <HeartPulse className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="font-heading font-bold text-sm text-primary-900 leading-tight">Symptom Journal</h2>
+                  <p className="text-[11px] text-primary-500 truncate">
+                    {journalStats
+                      ? `${journalStats.entries} ${journalStats.entries === 1 ? 'entry' : 'entries'} · ${journalStats.symptomCount} symptoms tracked${journalStats.topSymptom ? ` · most: ${journalStats.topSymptom[0]}` : ''}`
+                      : 'Rate each symptom 1–5 — your doctor reads every entry.'}
                   </p>
                 </div>
-                <button
-                  onClick={() => setIsSymptomModalOpen(true)}
-                  className="inline-flex items-center gap-2 px-6 py-3.5 rounded-button bg-white text-clinical-800 font-heading font-bold text-sm shadow-modal hover:bg-clinical-50 transition-med shrink-0 cursor-pointer"
-                >
-                  <Plus className="w-4.5 h-4.5" strokeWidth={2.6} />
+              </div>
+
+              <div className="ml-auto flex items-center gap-2.5 flex-wrap">
+                {guidanceCount > 0 && (
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-clinical-50 text-clinical-800 border border-clinical-200">
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    {guidanceCount} doctor {guidanceCount === 1 ? 'reply' : 'replies'}
+                  </span>
+                )}
+                <div className="hidden md:flex items-center gap-1" title="Severity scale: mild → severe">
+                  {SEVERITY.dots.map(n => (
+                    <span key={n} className={`w-2 h-2 rounded-full ${SEVERITY.tone(n).color}`} />
+                  ))}
+                </div>
+                <Button variant="primary" onClick={() => setIsSymptomModalOpen(true)}>
+                  <Plus className="w-3.5 h-3.5" />
                   <span>Log how you feel</span>
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -666,33 +755,8 @@ export default function PatientDashboardPage() {
               />
             ) : (
               <>
-                {/* Stats row */}
-                {journalStats && (
-                  <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-1">
-                    <span className="text-xs text-primary-500">
-                      <span className="font-heading font-extrabold text-base text-primary-900 mr-1">{journalStats.entries}</span>
-                      {journalStats.entries === 1 ? 'entry' : 'entries'}
-                    </span>
-                    <span className="text-xs text-primary-500">
-                      <span className="font-heading font-extrabold text-base text-primary-900 mr-1">{journalStats.symptomCount}</span>
-                      symptoms tracked
-                    </span>
-                    {journalStats.topSymptom && (
-                      <span className="text-xs text-primary-500">
-                        most tracked: <span className="font-semibold text-primary-800">{journalStats.topSymptom[0]}</span>
-                      </span>
-                    )}
-                    <div className="ml-auto flex items-center gap-1.5">
-                      <span className="text-[10px] font-semibold text-primary-400 uppercase tracking-wider mr-1">Severity</span>
-                      {SEVERITY.dots.map(n => (
-                        <span key={n} className={`w-2.5 h-2.5 rounded-full ${SEVERITY.tone(n).color}`} title={`${n} — ${SEVERITY.tone(n).label}`} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Severity-spine timeline */}
-                <div className="relative pl-7 sm:pl-9 space-y-6">
+                <div className="relative pl-7 sm:pl-9 space-y-5">
                   {/* The spine: colored segments per entry rendered by node; base rail light */}
                   <div className="absolute left-[9px] sm:left-[13px] top-2 bottom-2 w-1 bg-primary-100 rounded-full" />
 
@@ -722,7 +786,7 @@ export default function PatientDashboardPage() {
                               weekday: 'short', month: 'short', day: 'numeric'
                             })}
                           </h4>
-                          <span className="text-[11px] font-semibold text-primary-400">
+                          <span className="text-xs font-semibold text-primary-400">
                             {entry.duration ? `felt for ${entry.duration.toLowerCase()}` : ''}
                           </span>
                           {entry.symptoms.length > 1 && (
@@ -733,11 +797,13 @@ export default function PatientDashboardPage() {
                         </div>
 
                         {/* Symptom rows: name + dot-scale */}
-                        <div className="mt-2.5 space-y-2">
+                        <div className="mt-2 space-y-1.5">
                           {entry.symptoms.map(s => {
                             const { filled, tone } = sevOf(s);
+                            const SIcon = symptomIcon(s.label);
                             return (
                               <div key={s.id} className="flex items-center gap-3">
+                                <SIcon className={`w-4 h-4 shrink-0 ${tone.text}`} />
                                 <span className="text-sm font-semibold text-primary-800 w-40 sm:w-56 truncate shrink-0">
                                   {s.label}
                                 </span>
@@ -749,7 +815,7 @@ export default function PatientDashboardPage() {
                                     />
                                   ))}
                                 </div>
-                                <span className={`text-[10px] font-bold uppercase tracking-wider ${tone.text} hidden sm:inline`}>
+                                <span className={`text-xs font-bold uppercase tracking-wider ${tone.text} hidden sm:inline`}>
                                   {tone.label}
                                 </span>
                               </div>
@@ -768,6 +834,30 @@ export default function PatientDashboardPage() {
                           <p className="mt-2 text-xs text-primary-500 border-l-2 border-primary-200 pl-3 leading-relaxed max-w-2xl">
                             {entry.notes}
                           </p>
+                        )}
+
+                        {/* Doctor guidance — the reply loop that makes logging worthwhile */}
+                        {(guidanceByEntry[entry.key] || []).length > 0 && (
+                          <div className="mt-3 rounded-card border border-clinical-200/70 bg-clinical-50/50 p-3.5 space-y-2.5">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-clinical-800 flex items-center gap-1.5">
+                              <MessageCircle className="w-3.5 h-3.5" />
+                              Your doctor's guidance
+                            </span>
+                            {(guidanceByEntry[entry.key] || []).map(c => (
+                              <div key={c.id} className="flex items-start gap-2.5">
+                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-clinical-600 to-primary-800 flex items-center justify-center text-white text-[10px] font-heading font-bold shrink-0 shadow-subtle">
+                                  DR
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-baseline gap-2 flex-wrap">
+                                    <span className="font-heading font-bold text-xs text-primary-900">{c.doctor_name}</span>
+                                    <span className="text-[10px] text-primary-400">{c.doctor_specialization || ''}</span>
+                                  </div>
+                                  <p className="mt-0.5 text-xs text-primary-700 leading-relaxed">{c.comment}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
                     );
@@ -823,16 +913,21 @@ export default function PatientDashboardPage() {
                   const meta = APPOINTMENT_STATUS_META[a.status] || APPOINTMENT_STATUS_META.confirmed;
                   const todayStr = new Date().toISOString().split('T')[0];
                   const isUpcoming = a.appointment_date >= todayStr && a.status !== 'cancelled';
+                  const isReschedule = a.status === 'reschedule_proposed';
                   return (
                     <div
                       key={a.id}
                       className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-card border bg-surface-card shadow-subtle ${
-                        isUpcoming ? 'border-l-4 border-l-clinical-600 border-y-surface-border border-r-surface-border' : 'border-surface-border'
+                        isReschedule
+                          ? 'border-l-4 border-l-clinical-600 border-y-surface-border border-r-surface-border ring-1 ring-clinical-200'
+                          : isUpcoming
+                            ? 'border-l-4 border-l-clinical-600 border-y-surface-border border-r-surface-border'
+                            : 'border-surface-border'
                       }`}
                     >
                       <div className="flex items-center gap-3.5 min-w-0">
                         <div className={`w-11 h-11 rounded-card flex flex-col items-center justify-center leading-none shrink-0 border ${
-                          isUpcoming
+                          isUpcoming || isReschedule
                             ? 'bg-clinical-50 border-clinical-200 text-clinical-700'
                             : 'bg-surface-subtle border-surface-border text-primary-400'
                         }`}>
@@ -850,14 +945,66 @@ export default function PatientDashboardPage() {
                                 weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
                               })}
                             </span>
-                            {isUpcoming && <Badge variant="clinical" size="sm">Upcoming</Badge>}
+                            {a.appointment_time && (
+                              <span className="text-xs font-bold text-clinical-700 font-mono tnum">
+                                {formatApptTime(a.appointment_time)}
+                              </span>
+                            )}
+                            {isUpcoming && !isReschedule && <Badge variant="clinical" size="sm">Upcoming</Badge>}
                           </div>
                           <p className="text-xs text-primary-500 truncate mt-0.5">
                             {a.reason || 'Clinical consultation'} • {a.doctor_name}
                           </p>
+
+                          {/* Reschedule proposal: original vs offered, side by side (Phase 145) */}
+                          {isReschedule && a.proposed_date && (
+                            <div className="mt-2.5 p-3 rounded-card bg-clinical-50/60 border border-clinical-200/70 space-y-2">
+                              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-clinical-800">
+                                <CalendarClock className="w-3.5 h-3.5" />
+                                {a.doctor_name} proposed a new time
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 text-xs">
+                                <span className="px-2 py-1 rounded-button bg-white border border-surface-border text-primary-500 line-through decoration-1 tnum">
+                                  {a.appointment_date}{a.appointment_time ? ` ${formatApptTime(a.appointment_time)}` : ''}
+                                </span>
+                                <ChevronRight className="w-3.5 h-3.5 text-clinical-600" />
+                                <span className="px-2 py-1 rounded-button bg-clinical-600 text-white font-bold tnum">
+                                  {a.proposed_date}{a.proposed_time ? ` ${formatApptTime(a.proposed_time)}` : ''}
+                                </span>
+                              </div>
+                              {a.proposed_reason && (
+                                <p className="text-[11px] text-primary-600 italic">“{a.proposed_reason}”</p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <Badge variant={meta.variant} size="md">{meta.label}</Badge>
+
+                      <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
+                        <Badge variant={meta.variant} size="md">{meta.label}</Badge>
+                        {isReschedule && (
+                          <div className="flex items-center gap-1.5">
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              disabled={respondBusy === a.id}
+                              onClick={() => respondToReschedule(a.id, true)}
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Accept</span>
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={respondBusy === a.id}
+                              onClick={() => respondToReschedule(a.id, false)}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>Decline</span>
+                            </Button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -910,6 +1057,21 @@ export default function PatientDashboardPage() {
           isOpen={isBookingModalOpen}
           onClose={() => setIsBookingModalOpen(false)}
           onBooked={() => triggerRefresh('Appointment requested. Your doctor will confirm shortly.', 'success')}
+        />
+
+        {/* Lab report upload + AI review (Block XII) */}
+        <LabReportUploadModal
+          isOpen={isLabUploadOpen}
+          onClose={() => setIsLabUploadOpen(false)}
+          onConfirmed={(res) => {
+            const matched = res.matched_order_count || 0;
+            triggerRefresh(
+              matched > 0
+                ? `${res.message} Matched ${matched} pending lab order${matched > 1 ? 's' : ''} automatically.`
+                : res.message,
+              'success'
+            );
+          }}
         />
       </main>
     </div>

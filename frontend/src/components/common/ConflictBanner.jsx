@@ -18,7 +18,7 @@ export default function ConflictBanner({ warnings = [], onDismiss }) {
                 {warnings.length} {warnings.length === 1 ? 'Notice' : 'Notices'}
               </span>
             </h4>
-            <span className="text-[11px] text-warning font-medium">Advisory Only • Non-Blocking</span>
+            <span className="text-xs text-warning font-medium">Advisory Only • Non-Blocking</span>
           </div>
 
           <div className="mt-2 space-y-2">
@@ -41,7 +41,7 @@ export default function ConflictBanner({ warnings = [], onDismiss }) {
             ))}
           </div>
 
-          <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-warning">
+          <div className="mt-2.5 flex items-center gap-1.5 text-xs text-warning">
             <Info className="w-3.5 h-3.5 shrink-0 text-warning" />
             <span>
               Clinical discretion applies: The system permits saving if combination therapy or dose titration is clinically indicated.

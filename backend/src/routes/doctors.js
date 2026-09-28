@@ -4,12 +4,14 @@ const { db } = require('../db/database');
 const { authenticateToken } = require('../middleware/auth');
 
 // GET /doctors - List doctors (for Patient's appointment booking picker)
+// Deactivated doctors are excluded: they are not currently practicing, but all
+// of their historical clinical records keep rendering everywhere (append-only).
 router.get('/', authenticateToken, (req, res) => {
   try {
     const doctors = db.prepare(`
       SELECT id, name, email, specialization
       FROM users
-      WHERE role = 'doctor'
+      WHERE role = 'doctor' AND is_active = 1
       ORDER BY name ASC
     `).all();
 

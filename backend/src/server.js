@@ -12,6 +12,10 @@ const patientRoutes = require('./routes/patients');
 const selfLogRoutes = require('./routes/selfLogs');
 const appointmentRoutes = require('./routes/appointments');
 const doctorRoutes = require('./routes/doctors');
+const adminRoutes = require('./routes/admin');
+const labReportRoutes = require('./routes/labReports');
+
+const { LAB_REPORT_UPLOADS_DIR } = require('./config');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -26,7 +30,11 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+
+// Serve uploaded lab-report images (gitignored folder; auth enforced at the
+// route/data level, files referenced by path from lab_report_uploads)
+app.use('/uploads', express.static(LAB_REPORT_UPLOADS_DIR));
 
 // Request logger for debugging
 app.use((req, res, next) => {
@@ -53,6 +61,8 @@ const mountRouters = (prefix = '') => {
   app.use(`${prefix}/self-logs`, selfLogRoutes);
   app.use(`${prefix}/appointments`, appointmentRoutes);
   app.use(`${prefix}/doctors`, doctorRoutes);
+  app.use(`${prefix}/admin`, adminRoutes);
+  app.use(`${prefix}/lab-reports`, labReportRoutes);
 };
 
 mountRouters('/api');

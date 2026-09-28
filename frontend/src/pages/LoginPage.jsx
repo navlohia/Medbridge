@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Stethoscope, User, Lock, Mail, ArrowRight, ShieldCheck, HeartPulse, Loader2 } from 'lucide-react';
+import { Stethoscope, User, Lock, Mail, ArrowRight, ShieldCheck, Loader2 } from 'lucide-react';
+// ShieldCheck already used in the footer; admin persona tile reuses it
+import LogoMark from '../components/common/LogoMark';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -31,29 +33,36 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-surface-base flex flex-col justify-center py-12 sm:px-6 lg:px-8 selection:bg-clinical-100">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+    <div className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative">
+      {/* Brand canvas: soft teal wash + grid texture behind the card */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0 bg-[radial-gradient(55%_60%_at_15%_0%,rgba(13,148,136,0.10),transparent_60%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(45%_55%_at_100%_100%,rgba(15,118,110,0.07),transparent_65%)]" />
+        <div className="absolute inset-0 hero-grid opacity-60" style={{ maskImage: 'none', WebkitMaskImage: 'none' }} />
+      </div>
+
+      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center relative">
         {/* Brand Icon */}
-        <div className="w-14 h-14 rounded-2xl bg-white border border-clinical-200/80 mx-auto flex items-center justify-center text-clinical-600 shadow-card mb-4">
-          <HeartPulse className="w-8 h-8 stroke-[2.2]" />
+        <div className="flex justify-center mb-4">
+          <LogoMark size="lg" />
         </div>
 
-        <h1 className="font-heading font-extrabold text-2xl sm:text-3xl text-primary-950 tracking-tight">
-          MedBridge
+        <h1 className="font-heading font-extrabold text-2xl sm:text-3xl tracking-tight">
+          <span className="text-gradient-clinical">MedBridge</span>
         </h1>
         <p className="mt-1 text-xs sm:text-sm text-primary-500 font-sans">
           Connected Clinical Records & Patient Intelligence
         </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">
-        <div className="bg-white py-8 px-6 sm:px-8 border border-surface-border rounded-xl shadow-card space-y-6">
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0 relative">
+        <div className="bg-white py-8 px-6 sm:px-8 border border-surface-border rounded-xl shadow-modal space-y-6">
           {/* Demo Persona Quick Selectors */}
           <div className="space-y-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-primary-400 block">
+            <span className="text-xs font-bold uppercase tracking-wider text-primary-400 block">
               Quick Demo Personas (Click to Load)
             </span>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               <button
                 type="button"
                 onClick={() => setDemoPersona('doctor@medbridge.com')}
@@ -105,6 +114,24 @@ export default function LoginPage() {
                 </div>
                 <div className="text-[10px] text-primary-600 font-medium truncate mt-1">
                   Elena Rostova
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDemoPersona('admin@medbridge.com')}
+                className={`p-2.5 rounded-lg border text-left transition-med flex flex-col justify-between ${
+                  email === 'admin@medbridge.com'
+                    ? 'border-clinical-500 bg-clinical-50/60 ring-1 ring-clinical-500'
+                    : 'border-surface-border bg-surface-subtle/50 hover:bg-white'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 text-primary-800 font-bold text-xs">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>Admin</span>
+                </div>
+                <div className="text-[10px] text-primary-600 font-medium truncate mt-1">
+                  Priya Nair
                 </div>
               </button>
             </div>
@@ -177,7 +204,7 @@ export default function LoginPage() {
 
           {/* Footer note */}
           <div className="pt-2 border-t border-surface-border text-center">
-            <div className="flex items-center justify-center gap-1.5 text-[11px] text-primary-400">
+            <div className="flex items-center justify-center gap-1.5 text-xs text-primary-400">
               <ShieldCheck className="w-3.5 h-3.5 text-clinical-600" />
               <span>Role-gated clinical records • Localhost SQLite DB</span>
             </div>

@@ -1,19 +1,74 @@
 const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireRole } = require('../middleware/auth');
+const { createUserAccount, AccountValidationError } = require('../utils/accounts');
 
 // GET /doctors route lives in routes/doctors.js (mounted at /doctors)
 
+/**
+ * POST /patients — Doctor quick-add of a walk-in patient (Round 2 Phases 46–49).
+ * Deliberately light: name, email, DOB. Shares the exact same validation and
+ * password-generation utility as the admin create routes (Block III Phase 32).
+ * Response returns the generated temp password once, formatted to hand over.
+ */
+router.post('/', authenticateToken, requireRole('doctor'), (req, res) => {
+  try {
+    const { name, email, dob } = req.body;
+    const { user, tempPassword } = createUserAccount({ role: 'patient', name, email, dob });
+    res.status(201).json({
+      message: `${user.name} registered and ready. Temporary password shown once below.`,
+      user,
+      temp_password: tempPassword,
+      handoff_message: `Welcome, ${user.name}! Sign in at MedBridge with ${user.email} and the temporary password from your doctor — change it after your first sign-in.`
+    });
+  } catch (error) {
+    if (error instanceof AccountValidationError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    console.error('Error quick-adding patient:', error);
+    res.status(500).json({ error: 'Failed to register walk-in patient' });
+  }
+});
+
 // GET /patients - List patients (for Doctor's patient picker)
+// Enriched with lightweight symptom-journal activity so the clinician sees
+// who has been logging (and how rough the latest entry was) at a glance.
 router.get('/', authenticateToken, (req, res) => {
   try {
     const patients = db.prepare(`
-      SELECT id, name, email, role, created_at
+      SELECT id, name, email, role, dob, gender, phone, created_at
       FROM users
       WHERE role = 'patient'
       ORDER BY name ASC
     `).all();
+
+    const activeStmt = db.prepare(`
+      SELECT value, unit, log_date
+      FROM self_logs
+      WHERE patient_id = ? AND log_type = 'symptom' AND entry_id IS NOT NULL
+      ORDER BY log_date DESC, created_at DESC
+      LIMIT 5
+    `);
+    const countStmt = db.prepare(
+      'SELECT COUNT(DISTINCT entry_id) AS n FROM self_logs WHERE patient_id = ? AND log_type = ? AND entry_id IS NOT NULL'
+    );
+
+    for (const p of patients) {
+      p.entry_count = countStmt.get(p.id, 'symptom').n;
+      const recent = activeStmt.all(p.id);
+      if (recent.length === 0) {
+        p.symptom_activity = null;
+        continue;
+      }
+      const norm = (v, u) => ((u || '') === '/10' ? (parseFloat(v) || 0) / 2 : parseFloat(v) || 0);
+      const maxSev = Math.max(...recent.map(r => norm(r.value, r.unit)));
+      p.symptom_activity = {
+        log_date: recent[0].log_date,
+        log_count: recent.length,
+        max_severity: Math.round(maxSev * 10) / 10
+      };
+    }
 
     res.json(patients);
   } catch (error) {
@@ -72,9 +127,11 @@ router.get('/:id/history', authenticateToken, (req, res) => {
       `).all(visit.id);
     }
 
-    // 3. Fetch all appointments (status included for patient/doctor views)
+    // 3. Fetch all appointments (status + time included for patient/doctor views)
     const appointments = db.prepare(`
-      SELECT a.id, a.appointment_date, a.reason, a.status, doc.name as doctor_name
+      SELECT a.id, a.appointment_date, a.appointment_time, a.reason, a.status,
+             a.proposed_date, a.proposed_time, a.proposed_reason,
+             doc.name as doctor_name
       FROM appointments a
       JOIN users doc ON a.doctor_id = doc.id
       WHERE a.patient_id = ?
@@ -92,11 +149,28 @@ router.get('/:id/history', authenticateToken, (req, res) => {
       ORDER BY s.log_date DESC, s.created_at DESC
     `).all(patientId);
 
+    // 5. Doctor guidance threads on symptom journal entries, keyed by entry_id
+    const comments = db.prepare(`
+      SELECT c.id, c.entry_id, c.comment, c.created_at, doc.name AS doctor_name,
+             doc.specialization AS doctor_specialization
+      FROM symptom_comments c
+      JOIN users doc ON c.doctor_id = doc.id
+      WHERE c.patient_id = ?
+      ORDER BY c.created_at DESC
+    `).all(patientId);
+    const commentsByEntry = {};
+    for (const c of comments) {
+      if (!commentsByEntry[c.entry_id]) commentsByEntry[c.entry_id] = [];
+      commentsByEntry[c.entry_id].push(c);
+    }
+
     res.json({
       patient,
       visits,
       appointments,
-      self_logs: selfLogs
+      self_logs: selfLogs,
+      symptom_comments: comments,
+      symptom_comments_by_entry: commentsByEntry
     });
   } catch (error) {
     console.error('Error fetching patient history:', error);
@@ -111,7 +185,7 @@ router.get('/:id/dashboard', authenticateToken, (req, res) => {
 
     // 1. Next appointment: earliest non-cancelled upcoming appointment (any status),
     // falling back to the most recent past one
-    const today = new Date().toISOString().split('T')[0];
+    const today = require('../utils/scheduling').localDateStr();
     let nextAppointment = db.prepare(`
       SELECT a.id, a.appointment_date, a.reason, a.status, doc.name as doctor_name, doc.specialization
       FROM appointments a

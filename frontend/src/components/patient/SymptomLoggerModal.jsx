@@ -12,6 +12,7 @@ import {
 import { api } from '../../api/client';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
+import { symptomIcon } from '../../utils/iconMap';
 
 const COMMON_SYMPTOMS = [
   'Fever',
@@ -135,7 +136,7 @@ export default function SymptomLoggerModal({ isOpen, onClose, onSymptomLogged })
     }
   };
 
-  const labelCls = 'block text-[11px] font-bold uppercase tracking-wider text-primary-500 mb-1.5';
+  const labelCls = 'block text-xs font-bold uppercase tracking-wider text-primary-500 mb-1.5';
 
   return (
     <Modal
@@ -147,7 +148,7 @@ export default function SymptomLoggerModal({ isOpen, onClose, onSymptomLogged })
       subtitle="Pick one or more symptoms — rate each separately"
       footer={
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] text-primary-400">
+          <span className="text-xs text-primary-400">
             {selected.length === 0
               ? 'Nothing selected yet'
               : `${selected.length} symptom${selected.length > 1 ? 's' : ''} ready`}
@@ -217,10 +218,11 @@ export default function SymptomLoggerModal({ isOpen, onClose, onSymptomLogged })
               return (
                 <div
                   key={s.label}
-                  className={`p-3 rounded-card border ${tone.border} ${tone.bg} animate-fadeIn`}
+                  className={`p-3 rounded-card border shadow-subtle ${tone.border} ${tone.bg} animate-fadeIn`}
                 >
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="font-heading font-bold text-sm text-primary-900">
+                    <span className="font-heading font-bold text-sm text-primary-900 flex items-center gap-2">
+                      {React.createElement(symptomIcon(s.label), { className: 'w-4 h-4 text-clinical-600' })}
                       {s.label}
                     </span>
                     <button
@@ -246,10 +248,10 @@ export default function SymptomLoggerModal({ isOpen, onClose, onSymptomLogged })
                           className={`flex-1 h-9 rounded-button text-xs font-bold border transition-med cursor-pointer ${
                             active
                               ? l.value <= 2
-                                ? 'bg-success text-white border-success'
+                                ? 'bg-success text-white border-success shadow-subtle'
                                 : l.value === 3
-                                ? 'bg-warning text-white border-warning'
-                                : 'bg-danger text-white border-danger'
+                                ? 'bg-warning text-white border-warning shadow-subtle'
+                                : 'bg-danger text-white border-danger shadow-subtle'
                               : 'bg-white/70 text-primary-500 border-transparent hover:border-primary-300'
                           }`}
                         >
@@ -257,7 +259,7 @@ export default function SymptomLoggerModal({ isOpen, onClose, onSymptomLogged })
                         </button>
                       );
                     })}
-                    <span className={`ml-2 text-[10px] font-bold uppercase tracking-wider w-20 text-right ${tone.text}`}>
+                    <span className={`ml-2 text-xs font-bold uppercase tracking-wider w-20 text-right ${tone.text}`}>
                       {level?.name}
                     </span>
                   </div>
@@ -285,7 +287,10 @@ export default function SymptomLoggerModal({ isOpen, onClose, onSymptomLogged })
                     isSelected ? 'bg-clinical-50/70 font-semibold text-clinical-800' : 'hover:bg-surface-subtle text-primary-700'
                   }`}
                 >
-                  <span className="font-medium">{symptom}</span>
+                  <span className="font-medium flex items-center gap-2">
+                    {React.createElement(symptomIcon(symptom), { className: `w-4 h-4 shrink-0 ${isSelected ? 'text-clinical-600' : 'text-primary-400'}` })}
+                    {symptom}
+                  </span>
                   {isSelected ? (
                     <CheckCircle2 className="w-4 h-4 text-clinical-600 shrink-0" />
                   ) : (
@@ -309,7 +314,7 @@ export default function SymptomLoggerModal({ isOpen, onClose, onSymptomLogged })
               onClick={() => setDuration(opt.value)}
               className={`p-3 rounded-card border text-center transition-med cursor-pointer ${
                 duration === opt.value
-                  ? 'border-clinical-500 bg-clinical-50 ring-1 ring-clinical-500'
+                  ? 'border-clinical-500 bg-clinical-50 ring-1 ring-clinical-500 shadow-subtle'
                   : 'border-surface-border bg-surface-subtle/50 hover:bg-white'
               }`}
             >
@@ -342,7 +347,7 @@ export default function SymptomLoggerModal({ isOpen, onClose, onSymptomLogged })
             />
             <span className="absolute right-3 top-2.5 text-xs font-semibold text-primary-400">°F</span>
           </div>
-          <p className="text-[11px] text-warning">
+          <p className="text-xs text-warning">
             Optional but useful — it's saved as a vital and shows in your trend chart.
           </p>
         </div>

@@ -53,7 +53,7 @@ export default function MedicineDetailModal({ isOpen, onClose, medicine }) {
             Patient-Friendly Summary
           </span>
         </div>
-        <p className="text-xs text-primary-800 leading-relaxed font-medium">
+        <p className="text-sm text-primary-800 leading-relaxed font-medium">
           {explanation}
         </p>
       </div>
@@ -61,22 +61,22 @@ export default function MedicineDetailModal({ isOpen, onClose, medicine }) {
       {/* Prescribed regimen */}
       {hasRegimen && (
         <div className="bg-surface-subtle rounded-card p-3.5 border border-surface-border text-xs space-y-1.5">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-primary-500 flex items-center gap-1.5">
+          <div className="text-xs font-bold uppercase tracking-wider text-primary-500 flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5 text-primary-600" />
             Your Prescribed Regimen
           </div>
           <div className="grid grid-cols-2 gap-3 pt-1">
             <div>
-              <span className="text-primary-400 text-[11px] block">Instructions:</span>
+              <span className="text-primary-400 text-xs block">Instructions:</span>
               <span className="font-semibold text-primary-900">{medicine.dosage || 'As directed'}</span>
             </div>
             <div>
-              <span className="text-primary-400 text-[11px] block">Prescribed Duration:</span>
+              <span className="text-primary-400 text-xs block">Prescribed Duration:</span>
               <span className="font-semibold text-primary-900">{medicine.duration || '—'}</span>
             </div>
             {medicine.visit_date && (
               <div className="col-span-2">
-                <span className="text-primary-400 text-[11px] block">Prescribed On:</span>
+                <span className="text-primary-400 text-xs block">Prescribed On:</span>
                 <span className="font-semibold text-primary-900">{medicine.visit_date}</span>
               </div>
             )}
@@ -93,7 +93,7 @@ export default function MedicineDetailModal({ isOpen, onClose, medicine }) {
         <div className="p-3 bg-warning-bg rounded-card border border-warning-border text-xs text-warning-text leading-relaxed">
           {sideEffects}
         </div>
-        <p className="text-[11px] text-primary-400 italic">
+        <p className="text-xs text-primary-400 italic">
           Note: Most patients experience none or only mild effects. Do not stop taking your
           medication without consulting your physician.
         </p>

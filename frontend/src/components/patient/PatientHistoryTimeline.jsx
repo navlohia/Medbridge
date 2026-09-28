@@ -23,21 +23,21 @@ export default function PatientHistoryTimeline({ visits = [], onSelectMedicine }
           {/* Visit Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-surface-subtle pb-3">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-clinical-50 border border-clinical-200 flex items-center justify-center text-clinical-600">
-                <Calendar className="w-4 h-4" />
+              <div className="w-9 h-9 rounded-card bg-clinical-50 border border-clinical-200 flex items-center justify-center text-clinical-600 shrink-0">
+                <Stethoscope className="w-4 h-4" />
               </div>
               <div>
-                <span className="font-heading font-bold text-sm text-primary-900">
+                <span className="font-heading font-extrabold text-sm text-primary-900">
                   Consultation on {visit.visit_date}
                 </span>
-                <p className="text-[11px] text-primary-500">
-                  Attending Physician: {visit.doctor_name} ({visit.doctor_specialization || 'Internal Medicine'})
+                <p className="text-xs text-primary-500">
+                  {visit.doctor_name} ({visit.doctor_specialization || 'Internal Medicine'})
                 </p>
               </div>
             </div>
 
             <Badge variant="clinical" size="md">
-              Diagnosis: {visit.diagnosis_name}
+              {visit.diagnosis_name}
             </Badge>
           </div>
 
@@ -49,7 +49,7 @@ export default function PatientHistoryTimeline({ visits = [], onSelectMedicine }
                 {visit.diagnosis_desc || 'Clinical evaluation documented during this encounter.'}
               </p>
               {visit.diagnosis_precautions && (
-                <div className="text-[11px] text-primary-600 pt-1">
+                <div className="text-xs text-primary-600 pt-1">
                   <span className="font-semibold text-primary-800">Care Recommendations: </span>
                   {visit.diagnosis_precautions}
                 </div>
@@ -74,7 +74,7 @@ export default function PatientHistoryTimeline({ visits = [], onSelectMedicine }
                   <Pill className="w-3.5 h-3.5 text-clinical-600" />
                   Prescribed Medicines ({visit.prescriptions.length})
                 </h5>
-                <span className="text-[11px] text-clinical-600 font-medium hidden sm:inline">
+                <span className="text-xs text-clinical-600 font-medium hidden sm:inline">
                   Click any medicine to view plain-language guide
                 </span>
               </div>
@@ -93,10 +93,10 @@ export default function PatientHistoryTimeline({ visits = [], onSelectMedicine }
                         </span>
                         <ChevronRight className="w-3.5 h-3.5 text-primary-300 group-hover:text-clinical-600 shrink-0 mt-0.5" />
                       </div>
-                      <p className="text-[11px] text-primary-500 font-mono mt-0.5">{rx.composition}</p>
+                      <p className="text-xs text-primary-500 font-mono mt-0.5">{rx.composition}</p>
                     </div>
 
-                    <div className="mt-2.5 pt-2 border-t border-surface-subtle flex items-center justify-between text-[11px] text-primary-600">
+                    <div className="mt-2.5 pt-2 border-t border-surface-subtle flex items-center justify-between text-xs text-primary-600">
                       <span className="font-medium text-primary-800">{rx.dosage}</span>
                       <span className="text-primary-400">{rx.duration}</span>
                     </div>
@@ -121,7 +121,7 @@ export default function PatientHistoryTimeline({ visits = [], onSelectMedicine }
                   >
                     <span className="font-medium text-primary-900">{lo.test_name}</span>
                     <span className="text-primary-400">•</span>
-                    <span className="text-primary-500 text-[11px]">Due: {lo.scheduled_date}</span>
+                    <span className="text-primary-500 text-xs">Due: {lo.scheduled_date}</span>
                     <Badge variant={lo.status === 'completed' ? 'success' : 'warning'} size="sm">
                       {lo.status === 'completed' ? 'Completed' : 'Pending Lab'}
                     </Badge>

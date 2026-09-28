@@ -2,53 +2,16 @@ const express = require('express');
 const router = express.Router();
 const { db, transaction } = require('../db/database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const { autoCompleteLabOrders } = require('../utils/labOrders');
 
 const VALID_DURATIONS = ['Today', '2-3 days', 'A week+', 'Custom'];
-
-// A patient-logged vital completes a matching pending lab order when its
-// scheduled_date falls within this many days of the log date.
-const LAB_ORDER_MATCH_WINDOW_DAYS = 14;
 
 function genId(prefix) {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 }
 
 function todayStr() {
-  return new Date().toISOString().split('T')[0];
-}
-
-/**
- * Phase 15 hook: after a vital is logged, complete any pending lab order for the
- * same test_name whose scheduled_date is within +/- LAB_ORDER_MATCH_WINDOW_DAYS
- * of the log date. Runs inside the caller's transaction. Returns completed ids.
- */
-function autoCompleteLabOrders(database, patientId, label, logDate) {
-  const windowStart = new Date(logDate);
-  windowStart.setDate(windowStart.getDate() - LAB_ORDER_MATCH_WINDOW_DAYS);
-  const windowEnd = new Date(logDate);
-  windowEnd.setDate(windowEnd.getDate() + LAB_ORDER_MATCH_WINDOW_DAYS);
-  const wStart = windowStart.toISOString().split('T')[0];
-  const wEnd = windowEnd.toISOString().split('T')[0];
-
-  const matches = database.prepare(`
-    SELECT lo.id
-    FROM lab_orders lo
-    JOIN visits v ON lo.visit_id = v.id
-    WHERE v.patient_id = ?
-      AND lo.status = 'pending'
-      AND lo.test_name = ?
-      AND lo.scheduled_date >= ? AND lo.scheduled_date <= ?
-  `).all(patientId, label, wStart, wEnd);
-
-  const completedIds = [];
-  if (matches.length > 0) {
-    const update = database.prepare(`UPDATE lab_orders SET status = 'completed' WHERE id = ?`);
-    for (const m of matches) {
-      update.run(m.id);
-      completedIds.push(m.id);
-    }
-  }
-  return completedIds;
+  return require('../utils/scheduling').localDateStr();
 }
 
 function fetchEntry(entryId, patientId) {
@@ -213,6 +176,74 @@ router.post('/', authenticateToken, requireRole('patient'), (req, res) => {
   } catch (error) {
     console.error('Error recording self-log:', error);
     res.status(500).json({ error: 'Failed to record self-log entry' });
+  }
+});
+
+/**
+ * POST /self-logs/entry/:entryId/comment — Post-Pass 3: doctor guidance on a
+ * patient's symptom journal entry. Legacy single-log entries arrive as
+ * "solo_<logId>" (the client's synthetic grouping key); on first reply we
+ * materialize a real entry_id for that row so the thread persists.
+ */
+router.post('/entry/:entryId/comment', authenticateToken, requireRole('doctor'), (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const { comment } = req.body;
+    const doctorId = req.user.id;
+
+    const text = typeof comment === 'string' ? comment.trim() : '';
+    if (!text) {
+      return res.status(400).json({ error: 'Comment text is required' });
+    }
+    if (text.length > 2000) {
+      return res.status(400).json({ error: 'Comment must be 2000 characters or fewer' });
+    }
+
+    let effectiveEntryId = entryId;
+    let patientId;
+
+    if (entryId.startsWith('solo_')) {
+      // Legacy singleton row: materialize its entry_id on first guidance
+      const logRow = db.prepare('SELECT id, patient_id, entry_id FROM self_logs WHERE id = ?').get(entryId.slice(5));
+      if (!logRow) {
+        return res.status(404).json({ error: 'Journal entry not found' });
+      }
+      patientId = logRow.patient_id;
+      if (!logRow.entry_id) {
+        effectiveEntryId = genId('entry');
+        db.prepare('UPDATE self_logs SET entry_id = ? WHERE id = ?').run(effectiveEntryId, logRow.id);
+      } else {
+        effectiveEntryId = logRow.entry_id;
+      }
+    } else {
+      const entryRow = db.prepare('SELECT patient_id FROM self_logs WHERE entry_id = ? LIMIT 1').get(entryId);
+      if (!entryRow) {
+        return res.status(404).json({ error: 'Journal entry not found' });
+      }
+      patientId = entryRow.patient_id;
+    }
+
+    const id = genId('sc');
+    db.prepare(`
+      INSERT INTO symptom_comments (id, entry_id, patient_id, doctor_id, comment)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, effectiveEntryId, patientId, doctorId, text);
+
+    const saved = db.prepare(`
+      SELECT c.id, c.entry_id, c.comment, c.created_at,
+             doc.name AS doctor_name, doc.specialization AS doctor_specialization
+      FROM symptom_comments c
+      JOIN users doc ON c.doctor_id = doc.id
+      WHERE c.id = ?
+    `).get(id);
+
+    res.status(201).json({
+      message: 'Guidance added — the patient can now see it on their journal entry.',
+      comment: saved
+    });
+  } catch (error) {
+    console.error('Error adding symptom comment:', error);
+    res.status(500).json({ error: 'Failed to add guidance comment' });
   }
 });
 
