@@ -81,7 +81,10 @@ test.before(async () => {
 
   server = spawn(process.execPath, ['src/server.js'], {
     cwd: BACKEND_ROOT,
-    env: { ...process.env, MEDBRIDGE_DB_PATH: tmpDb, PORT: String(PORT), JWT_SECRET: 'rt-test-secret' },
+    // Pin the login limit for tests. The dev .env raises it (or lowers it) for
+    // demo convenience; this suite must assert the MECHANISM, so it sets its
+    // own known value instead of inheriting whatever the developer configured.
+    env: { ...process.env, MEDBRIDGE_DB_PATH: tmpDb, PORT: String(PORT), JWT_SECRET: 'rt-test-secret', LOGIN_RATE_LIMIT_MAX: '10' },
     stdio: ['ignore', 'ignore', 'pipe']
   });
   server.stderr.on('data', (d) => process.stderr.write(`[test server] ${d}`));

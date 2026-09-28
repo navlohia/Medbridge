@@ -76,10 +76,19 @@ async function makeReportImage(page) {
   await page.locator('button', { hasText: 'Read my report' }).click();
   await page.waitForTimeout(2500);
 
-  // No key → needs_manual_entry path with friendly notice (Phase 169)
+  // Phase 169 graceful path. Which branch we land on depends on the env:
+  // with GEMINI_API_KEY set the scan succeeds, without it the backend returns
+  // needs_manual_entry with a friendly notice. Assert the real invariant --
+  // either way the user lands on a usable review screen, never a dead end.
+  // (This used to assert the notice unconditionally and failed once a key
+  // was configured, even though the flow was fine.)
   const manualNotice = await page.locator('text=could not read this report automatically').first().count() >= 1
     || await page.locator('text=Enter the values below').first().count() >= 1;
-  check('graceful manual-entry path (no dead end)', manualNotice);
+  const reviewReachable = await page.locator('button', { hasText: 'Add a row the scan missed' }).count() >= 1
+    || await page.locator('button', { hasText: 'Confirm' }).count() >= 1
+    || manualNotice;
+  check('no dead end after submit (review screen reachable)', reviewReachable,
+    `manualNotice=${manualNotice}`);
 
   // Manual entry through the review screen (Phase 165)
   await page.locator('button', { hasText: 'Add a row the scan missed' }).click();

@@ -37,6 +37,13 @@ function loginBlocked(key) {
     loginFailures.delete(key);
     return 0;
   }
+  // BUG: this returned a retry-after for ANY recorded failure, so the limit
+  // was effectively 1 — one typo locked the account out for the whole 15
+  // minutes, and because this pre-check runs BEFORE the password is
+  // verified, even the correct password was refused. RATE_LIMIT_MAX was
+  // never consulted here; it was only checked after recording a new
+  // failure, which this guard made unreachable.
+  if (entry.count < RATE_LIMIT_MAX) return 0;
   return Math.ceil((RATE_WINDOW_MS - elapsed) / 1000);
 }
 

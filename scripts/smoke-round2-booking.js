@@ -68,33 +68,41 @@ function localDate(offset) {
   const requested = await page.locator('text=Appointment requested').first().count();
   check('booking with real time succeeds', requested >= 1);
 
-  // Phase 155: doctor sees it pending with correct time
-  await page.evaluate(() => { localStorage.setItem('medbridge_user', localStorage.getItem('medbridge_user')); });
-  await page.locator('button[title*="Dr. Evelyn Reed"]').click();
-  await page.waitForTimeout(1400);
-  const reqCard = await page.locator('text=Marcus Vance').first().count();
-  const reqTime = await page.locator('text=10:00 AM').first().count();
+  // Phase 155: doctor sees it pending with correct time.
+  // Sign in as the doctor in a separate tab. The old version tried to hop
+  // roles by clicking `button[title*="Dr. Evelyn Reed"]`, but no component
+  // renders a doctor name in a title attribute, so that never matched — and
+  // the localStorage line above it was a no-op (setItem(x, getItem(x))).
+  const docPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  await docPage.goto(BASE + '/auth/doctor', { waitUntil: 'domcontentloaded' });
+  await docPage.waitForTimeout(600);
+  await docPage.locator('input[type=email]').fill('doctor@medbridge.com');
+  await docPage.locator('input[type=password]').fill('demo1234');
+  await docPage.locator('button[type=submit]').click();
+  await docPage.waitForURL('**/doctor', { timeout: 8000 });
+  await docPage.waitForTimeout(1600);
+  const reqCard = await docPage.locator('text=Marcus Vance').first().count();
+  const reqTime = await docPage.locator('text=10:00 AM').first().count();
   check('doctor sees pending request with correct time', reqCard >= 1 && reqTime >= 1);
 
   // Phase 156 setup: doctor proposes reschedule via new action
-  await page.locator('button', { hasText: 'Propose Reschedule' }).first().click();
-  await page.waitForTimeout(600);
-  await page.getByRole('dialog').locator('input[type=date]').fill(target);
-  await page.waitForTimeout(1200);
+  await docPage.locator('button', { hasText: 'Propose Reschedule' }).first().click();
+  await docPage.waitForTimeout(600);
+  await docPage.getByRole('dialog').locator('input[type=date]').fill(target);
+  await docPage.waitForTimeout(1200);
   // pick a different open slot (11:00 AM)
-  await page.locator('button:has-text("11:00 AM")').first().click();
-  await page.waitForTimeout(300);
-  await page.locator('textarea').fill('Clinic schedule shifted — would this work?');
-  await page.locator('button', { hasText: 'Propose New Time' }).click();
-  await page.waitForTimeout(1400);
-  const proposeToast = await page.locator('text=Reschedule proposed').first().count();
+  await docPage.locator('button:has-text("11:00 AM")').first().click();
+  await docPage.waitForTimeout(300);
+  await docPage.locator('textarea').fill('Clinic schedule shifted — would this work?');
+  await docPage.locator('button', { hasText: 'Propose New Time' }).click();
+  await docPage.waitForTimeout(1400);
+  const proposeToast = await docPage.locator('text=Reschedule proposed').first().count();
   check('doctor proposes reschedule successfully', proposeToast >= 1);
+  await docPage.close();
 
-  // Patient accepts (Phase 156) — re-open the Appointments tab after remount
-  await page.locator('button[title*="Marcus Vance"]').click();
-  await page.waitForTimeout(1400);
+  // Patient accepts (Phase 156) — the original patient tab is still signed in
   await page.locator('button', { hasText: 'Appointments' }).first().click();
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(1200);
   const proposalCard = await page.locator('text=proposed a new time').first().count();
   check('patient sees reschedule proposal card', proposalCard >= 1);
   const seesBoth = await page.locator('text=Clinic schedule shifted').first().count();

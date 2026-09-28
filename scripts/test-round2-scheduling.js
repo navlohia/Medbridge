@@ -200,8 +200,14 @@ async function main() {
   check('visit-created appointment has time 13:30', Boolean(createdTimeApt));
 
   // Phase 74: drug-conflict logic untouched
-  const meds = await req('GET', '/medicines?q=Metformin', null, null);
-  const antiDiabetic = meds.body.find(m => m.therapeutic_class === 'Antidiabetic');
+  // The medicine catalog is token-gated (any role may read), so this call
+  // needs a session. It used to pass `null` and then called .find() on the
+  // 401 body, which crashed the whole run after 20 passes.
+  const meds = await req('GET', '/medicines?q=Metformin', null, docT);
+  const medList = Array.isArray(meds.body) ? meds.body : (meds.body.medicines || []);
+  const antiDiabetic = medList.find(m => m.therapeutic_class === 'Antidiabetic');
+  check('medicines search returns a list', medList.length > 0,
+    `status=${meds.status} body=${JSON.stringify(meds.body).slice(0, 120)}`);
   const conflict = await req('POST', '/visits/check-conflicts', {
     patient_id: 'pat_1', medicine_ids: [antiDiabetic?.id]
   }, docT);

@@ -26,6 +26,20 @@ function check(name, cond, detail = '') {
   await page.waitForURL('**/admin', { timeout: 8000 });
   await page.waitForTimeout(600);
 
+  // Grab a patient session NOW, while the server is still up. The patient tab
+  // below used to try to sign in *after* the kill, which can never succeed —
+  // so it was bounced to the role picker and the check reported a false
+  // failure (err=0) against a page that was never a dashboard.
+  const patCreds = await page.evaluate(async () => {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'patient1@medbridge.com', password: 'demo1234', role: 'patient' })
+    });
+    return await r.json();
+  });
+  check('patient session captured before shutdown', !!patCreds.token, JSON.stringify(patCreds).slice(0, 120));
+
   // *** KILL THE BACKEND from inside the test (cmd.exe natively: findstr + taskkill) ***
   const { execSync } = require('child_process');
   try {
@@ -68,19 +82,17 @@ function check(name, cond, detail = '') {
   const blankCheck = await page.evaluate(() => document.body.innerText.trim().length);
   check('doctor dashboard shows error text (not blank)', docPageErr >= 1 && blankCheck > 100, `err=${docPageErr} chars=${blankCheck}`);
 
-  // Patient dashboard → error state. Fresh login as a patient in a new tab
-  // (server is dead, so every dashboard fetch fails identically regardless of
-  // token validity); the original admin tab stays untouched.
+  // Patient dashboard → error state. Reuse the session captured before the
+  // kill, injected into a fresh tab's per-tab sessionStorage (P04). The
+  // original admin tab stays untouched.
   {
     const patPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-    await patPage.goto(BASE + '/auth/patient', { waitUntil: 'domcontentloaded' });
-    await patPage.waitForTimeout(500);
-    await patPage.locator('input[type=email]').fill('patient1@medbridge.com');
-    await patPage.locator('input[type=password]').fill('demo1234').catch(() => {});
-    await patPage.locator('button[type=submit]').click().catch(() => {});
-    await patPage.waitForTimeout(1500);
+    await patPage.addInitScript(([tok, usr]) => {
+      sessionStorage.setItem('medbridge_token', tok);
+      sessionStorage.setItem('medbridge_user', usr);
+    }, [patCreds.token, JSON.stringify(patCreds.user)]);
   await patPage.goto(BASE + '/patient', { waitUntil: 'domcontentloaded' });
-  await patPage.waitForTimeout(2500);
+  await patPage.waitForTimeout(3000);
   const patErr = await patPage.locator('text=Could not load your health portal').count();
   const patChars = await patPage.evaluate(() => document.body.innerText.trim().length);
   check('patient dashboard shows error state (not blank)', patErr >= 1 && patChars > 100, `err=${patErr} chars=${patChars}`);
@@ -88,6 +100,7 @@ function check(name, cond, detail = '') {
   // Screenshot evidence
   await patPage.screenshot({ path: 'screenshots/R2_failstate_patient.png' });
   await patPage.close();
+  }
 
   await browser.close();
   console.log(`\n=== Phase 229 force-fail sweep: ${passed} passed, ${failed} failed ===`);
