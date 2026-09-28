@@ -493,7 +493,7 @@ export default function PatientDashboardPage() {
                   <div className="bg-gradient-to-r from-clinical-700 to-clinical-600 rounded-card p-5 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-card">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-card bg-white/15 border border-white/20 flex flex-col items-center justify-center leading-none shrink-0">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-clinical-100">Appt</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-clinical-100">Date</span>
                         <span className="text-[9px] font-bold text-clinical-100 mt-px">{nextAppointment.appointment_date.slice(5)}</span>
                       </div>
                       <div className="min-w-0">

@@ -89,7 +89,7 @@ export default function AppointmentRequests({ requests = [], onStatusChange, onR
               >
                 <div className="flex items-center gap-3.5 min-w-0">
                   <div className="w-10 h-10 rounded-card bg-white border border-warning-border flex flex-col items-center justify-center leading-none shrink-0">
-                    <span className="text-[8px] font-bold uppercase tracking-wide text-warning">Appt</span>
+                    <span className="text-[8px] font-bold uppercase tracking-wide text-warning">Date</span>
                     <span className="font-heading font-extrabold text-xs text-warning-text">
                       {req.appointment_date?.slice(5)}
                     </span>
